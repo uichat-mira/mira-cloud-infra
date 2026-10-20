@@ -10,7 +10,7 @@ No public HTTP/HTTPS endpoint is configured until a separate domain/ICP/security
 2. Install Docker Engine and the Docker Compose plugin from the vendor's supported Ubuntu installation instructions. Confirm `docker version`, `docker compose version`, disk and memory.
 3. Restrict SSH (port 22 or your custom port) to trusted sources via host firewall and the cloud firewall. Do **not** open TCP 3000. Disable password login after SSH key login is verified and preserve an emergency console recovery path.
 4. Allocate swap only after reviewing host disk/memory. Swap reduces short peaks, not sustained overload.
-5. Allow the deploy SSH user to write `/opt/mira-cloud-infra` and access Docker; make `data/` and `backups/` private. Confirm `curl` and `gzip` are installed.
+5. **Networking decision is not automatic:** regular GitHub-hosted Actions runners do not have a stable source IP. Direct SSH deployment requires the host's SSH port to be reachable from those runners; limiting it to your personal IP will block CI. Do not open unrestricted SSH merely to make a workflow green. Before first production deployment, approve a deliberate access choice (key-only public SSH with hardening, or a private/outbound network deployment path).\n6. Allow the deploy SSH user to write `/opt/mira-cloud-infra` and access Docker; make `data/` and `backups/` private. Confirm `curl` and `gzip` are installed.
 
 ## GitHub production setup — required before creating/promoting prod
 In repository **Settings → Environments**, create `production`. Restrict deployment branches to `prod`; enable required reviewers where supported.
