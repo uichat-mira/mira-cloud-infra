@@ -26,3 +26,21 @@ assert any(v["target"] == "/data" and v["type"] == "bind" for v in svc["volumes"
 assert int(svc["mem_limit"]) <= 512 * 1024 * 1024, "2 GiB host budget exceeded"
 print("Mira config contract: OK (no runtime or network verification)")
 PY
+
+# Guard the deployment authentication contract without executing a real SSH login.
+python3 - <<'PY'
+from pathlib import Path
+
+workflow = Path(".github/workflows/deploy.yml").read_text()
+assert "branches: [prod]" in workflow
+assert "github.ref == 'refs/heads/prod'" in workflow
+assert "environment: production" in workflow
+assert "secrets.DEPLOY_PASSWORD" in workflow
+assert "secrets.DEPLOY_KNOWN_HOSTS" in workflow
+assert "sshpass -e" in workflow
+assert "StrictHostKeyChecking=yes" in workflow
+assert "UserKnownHostsFile=" in workflow
+assert "DEPLOY_SSH_PRIVATE_KEY" not in workflow, "legacy private-key contract"
+assert "StrictHostKeyChecking=no" not in workflow
+print("Mira SSH deployment contract: password + pinned host key (static check only)")
+PY

@@ -6,11 +6,12 @@ This is a small shared node, not a general production cluster. The first deploym
 No public HTTP/HTTPS endpoint is configured until a separate domain/ICP/security decision is completed. SSH port forwarding is the supported initial access pattern.
 
 ## Bootstrap on Ubuntu
-1. Create a dedicated SSH account and deploy-only SSH key. Keep the private key **outside Git**. A Unix account permitted to use Docker is effectively root-equivalent; tightly limit who controls the deployment workflow.
+1. Use a non-root SSH account that accepts password authentication (initial target: `admin`). Use a long, unique password stored only in the protected GitHub `production` Environment Secret. A Docker-enabled account is effectively root-equivalent: tightly restrict workflow edit and deployment rights.
 2. Install Docker Engine and the Docker Compose plugin from the vendor's supported Ubuntu installation instructions. Confirm `docker version`, `docker compose version`, disk and memory.
-3. Restrict SSH (port 22 or your custom port) to trusted sources via host firewall and the cloud firewall. Do **not** open TCP 3000. Disable password login after SSH key login is verified and preserve an emergency console recovery path.
+3. Do **not** open TCP 3000. Verify the selected SSH account supports password login. Disable root SSH login, use a strong unique password and rate limiting, and preserve an emergency cloud-console recovery path.
 4. Allocate swap only after reviewing host disk/memory. Swap reduces short peaks, not sustained overload.
-5. **Networking decision is not automatic:** regular GitHub-hosted Actions runners do not have a stable source IP. Direct SSH deployment requires the host's SSH port to be reachable from those runners; limiting it to your personal IP will block CI. Do not open unrestricted SSH merely to make a workflow green. Before first production deployment, approve a deliberate access choice (key-only public SSH with hardening, or a private/outbound network deployment path).\n6. Allow the deploy SSH user to write `/opt/mira-cloud-infra` and access Docker; make `data/` and `backups/` private. Confirm `curl` and `gzip` are installed.
+5. **Networking decision is not automatic:** normal GitHub-hosted Actions runners have changing source IPs. A direct password SSH deployment needs inbound SSH access reachable from the runner. A home-IP-only rule will block CI; exposing password SSH broadly increases brute-force risk. Do not loosen the firewall merely to make CI green; approve a hardened inbound or private/outbound deployment path first.
+6. Allow the deploy SSH user to write `/opt/mira-cloud-infra` and access Docker; make `data/` and `backups/` private. Confirm `curl` and `gzip` are installed.
 
 ## GitHub production setup — required before creating/promoting prod
 In repository **Settings → Environments**, create `production`. Restrict deployment branches to `prod`; enable required reviewers where supported.
@@ -22,7 +23,7 @@ Place these **environment secrets**, never repository files or comments:
 | `DEPLOY_HOST` | SSH host (do not commit the server IP) |
 | `DEPLOY_USER` | deploy account |
 | `DEPLOY_PORT` | SSH port, normally `22` |
-| `DEPLOY_SSH_PRIVATE_KEY` | deploy-only private key, PEM/OpenSSH format |
+| `DEPLOY_PASSWORD` | SSH password for `DEPLOY_USER`, securely injected into `sshpass` using `SSHPASS` in the deploy step |
 | `DEPLOY_KNOWN_HOSTS` | trusted, pre-verified OpenSSH known_hosts entry, including `[host]:port` format for nonstandard ports |
 
 Obtain and independently verify the host's SSH public-key fingerprint **out of band** before recording `DEPLOY_KNOWN_HOSTS`. Do not silently accept a key obtained from the same untrusted network connection. The workflow enforces strict host-key checking.
@@ -35,7 +36,7 @@ Configure branch protection for `prod`, including required `Mira Gate`, reviews,
 Production workflow:
 1. Validate Compose and shell contracts; assert loopback-only service.
 2. Pull the fixed New API image on GitHub Actions, save and gzip it to avoid requiring registry pulls from the Guangzhou host.
-3. Use pinned SSH host identity, upload the bundle to `/opt/mira-cloud-infra`.
+3. Authenticate with username/password from GitHub Environment Secrets, validate the pinned server host key, and upload the bundle to `/opt/mira-cloud-infra`.
 4. Stop the running SQLite writer if present, take a restricted data snapshot, and load the image.
 5. Start Compose without pulling, check `http://127.0.0.1:3000/api/status` from the host.
 6. Record commit SHA on host. Production smoke is **local only**; this does not establish public HTTPS or upstream model connectivity.
@@ -65,6 +66,7 @@ If a deployment breaks:
 4. Do not automatically reverse an application/database schema upgrade without checking compatibility.
 
 ## Known limits
+- Public password-based SSH is an explicit operating tradeoff: enforce strong unique credentials, least privilege in GitHub, network controls and prompt password rotation after suspected exposure.
 - Current pinned image: `calciumion/new-api:v1.0.0-rc.37` from the reference deployment. This is a release-candidate build and **not approved for broader external production use** without reviewing upstream advisories and upgrading in a separate verified task.
 - `/api/status` verifies that the local gateway responds; it does not prove upstream model API availability.
 - No domain, ICP, public HTTPS, WeChat-group integration, external user onboarding or paid API distribution is provided by this repository yet.
