@@ -1,0 +1,32 @@
+name: Mira Cloud CI
+
+on:
+  pull_request:
+    branches: [dev, test, prod]
+  push:
+    branches: [dev, test, prod]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Configuration and boundary checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose and shell contracts
+        run: bash scripts/check.sh
+
+  mira-gate:
+    name: Mira Gate
+    if: ${{ always() }}
+    needs: [check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require checks to succeed
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+        run: |
+          test "$CHECK_RESULT" = "success"
