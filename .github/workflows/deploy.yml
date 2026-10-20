@@ -22,29 +22,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: production
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Validate configuration
         run: bash scripts/check.sh
 
-      - name: Prepare password SSH and verified host identity
+      - name: Verify pinned SSH host identity
+        id: hostkey
         shell: bash
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PINNED_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          for key in DEPLOY_HOST DEPLOY_USER DEPLOY_KNOWN_HOSTS; do
-            test -n "${!key}" || { echo "Missing deployment configuration: $key" >&2; exit 1; }
-          done
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq sshpass
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/known_hosts"
-          ssh-keygen -l -f "$HOME/.ssh/known_hosts" >/dev/null
+          test -n "$HOST" && test -n "$PINNED_HOSTS"
+          umask 077
+          printf '%s\n' "$PINNED_HOSTS" > "$RUNNER_TEMP/mira-known-hosts"
+          ssh-keygen -F "$HOST" -f "$RUNNER_TEMP/mira-known-hosts" >/dev/null
+          FINGERPRINT="$(ssh-keygen -lf "$RUNNER_TEMP/mira-known-hosts" -E sha256 | awk 'NR==1 {print $2}')"
+          test -n "$FINGERPRINT"
+          printf 'fingerprint=%s\n' "$FINGERPRINT" >> "$GITHUB_OUTPUT"
 
       - name: Package fixed New API image
         shell: bash
@@ -54,19 +52,45 @@ jobs:
           docker save calciumion/new-api:v1.0.0-rc.37 | gzip -1 > new-api-image.tar.gz
           gzip -t new-api-image.tar.gz
 
-      - name: Upload and deploy with password SSH
-        shell: bash
-        env:
-          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          test -n "$SSHPASS" || { echo "Missing DEPLOY_PASSWORD environment secret" >&2; exit 1; }
-          PORT="${DEPLOY_PORT:-22}"
-          REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
-          SSH_OPTS=(-o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive -o NumberOfPasswordPrompts=1)
-          SSH=(ssh "${SSH_OPTS[@]}" -p "$PORT")
-          SCP=(scp "${SSH_OPTS[@]}" -P "$PORT")
-          sshpass -e "${SSH[@]}" "$REMOTE" 'mkdir -p /opt/mira-cloud-infra/data /opt/mira-cloud-infra/backups; if test -f /opt/mira-cloud-infra/docker-compose.yml; then cp /opt/mira-cloud-infra/docker-compose.yml "/opt/mira-cloud-infra/backups/compose-before-$(date -u +%Y%m%dT%H%M%SZ).yml"; fi'
-          sshpass -e "${SCP[@]}" docker-compose.yml scripts/deploy.sh new-api-image.tar.gz "$REMOTE:/opt/mira-cloud-infra/"
-          sshpass -e "${SSH[@]}" "$REMOTE" 'mkdir -p /opt/mira-cloud-infra/scripts; mv /opt/mira-cloud-infra/deploy.sh /opt/mira-cloud-infra/scripts/deploy.sh; bash /opt/mira-cloud-infra/scripts/deploy.sh'
-          sshpass -e "${SSH[@]}" "$REMOTE" 'printf "%s\n" "'"$GITHUB_SHA"'" > /opt/mira-cloud-infra/.deployed-sha'
+      - name: Prepare server directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          fingerprint: ${{ steps.hostkey.outputs.fingerprint }}
+          command_timeout: 2m
+          script: |
+            set -eu
+            mkdir -p /opt/mira-cloud-infra/data /opt/mira-cloud-infra/backups /opt/mira-cloud-infra/scripts
+            chmod 700 /opt/mira-cloud-infra/data /opt/mira-cloud-infra/backups
+            if test -f /opt/mira-cloud-infra/docker-compose.yml; then
+              cp /opt/mira-cloud-infra/docker-compose.yml "/opt/mira-cloud-infra/backups/compose-before-$(date -u +%Y%m%dT%H%M%SZ).yml"
+            fi
+
+      - name: Upload deployment bundle
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          fingerprint: ${{ steps.hostkey.outputs.fingerprint }}
+          source: "docker-compose.yml,scripts/deploy.sh,new-api-image.tar.gz"
+          target: "/opt/mira-cloud-infra"
+          overwrite: true
+
+      - name: Deploy, verify and record commit
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          fingerprint: ${{ steps.hostkey.outputs.fingerprint }}
+          command_timeout: 8m
+          script: |
+            set -eu
+            bash /opt/mira-cloud-infra/scripts/deploy.sh
+            printf '%s\n' '${{ github.sha }}' > /opt/mira-cloud-infra/.deployed-sha
