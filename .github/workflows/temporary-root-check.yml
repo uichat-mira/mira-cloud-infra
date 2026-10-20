@@ -1,0 +1,39 @@
+name: Temporary root SSH connectivity check
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/temporary-root-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+    steps:
+      - name: Check root SSH password access (no writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for field in DEPLOY_HOST DEPLOY_USER DEPLOY_KNOWN_HOSTS SSHPASS; do
+            [[ -n "${!field}" ]] || { echo "MISSING_SECRET_NAME=$field"; exit 1; }
+          done
+          [[ "$DEPLOY_USER" == "root" ]] || { echo "DEPLOY_USER_IS_NOT_ROOT"; exit 1; }
+          if ! command -v sshpass >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+          umask 077
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/verified_hosts"
+          ssh-keygen -l -f "$RUNNER_TEMP/verified_hosts" >/dev/null
+          echo "CONNECTING_ON_PORT_22"
+          sshpass -e ssh -F /dev/null -p 22 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/verified_hosts" -o PreferredAuthentications=password -o PubkeyAuthentication=no -o BatchMode=no -o NumberOfPasswordPrompts=1 -o ConnectTimeout=12 -o ConnectionAttempts=1 "root@$DEPLOY_HOST" 'echo SSH_LOGIN_OK; id -un; cat /etc/os-release | grep PRETTY_NAME; free -h; df -h /; if command -v docker >/dev/null; then docker --version; docker compose version || true; else echo DOCKER_ABSENT; fi'
