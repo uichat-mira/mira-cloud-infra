@@ -16,9 +16,10 @@ echo "[deploy] loading pinned image delivered by GitHub Actions"
 gzip -dc "$ARCHIVE" | docker load
 rm -f "$ARCHIVE"
 
-# Stop the running SQLite writer before taking a consistent filesystem snapshot.
-if docker compose ps --status running --services | grep -Fxq new-api; then
-  echo "[deploy] stopping New API for SQLite backup"
+# A restarting container can write to SQLite between restart attempts.
+# Stop any existing container, including 'restarting', before archiving ./data.
+if [[ -n "$(docker compose ps --all --quiet new-api)" ]]; then
+  echo "[deploy] stopping existing New API container before SQLite backup"
   docker compose stop new-api
 fi
 if find data -type f -print -quit | grep -q .; then
