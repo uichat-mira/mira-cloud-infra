@@ -1,0 +1,70 @@
+name: Temporary SSH Read-Only Probe
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/temporary-ssh-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: SSH login and environment read-only check
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH password transport and pinned host identity
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in DEPLOY_HOST DEPLOY_USER DEPLOY_KNOWN_HOSTS SSHPASS; do
+            if [[ -z "${!key}" ]]; then
+              echo "Missing required production secret: $key"
+              exit 1
+            fi
+          done
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          ssh-keygen -l -f "$HOME/.ssh/known_hosts" >/dev/null
+          PORT="${DEPLOY_PORT:-22}"
+          REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
+          sshpass -e ssh -T -p "$PORT" -o ConnectTimeout=12 -o BatchMode=no -o NumberOfPasswordPrompts=1 -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$REMOTE" 'sh -s' <<'REMOTE_CHECK'
+          set -u
+          echo "PROBE_CONNECT=SUCCESS"
+          printf 'UTC='; date -u +%FT%TZ
+          printf 'USER='; id -un
+          printf 'UID='; id -u
+          printf 'KERNEL='; uname -sr
+          if test -r /etc/os-release; then . /etc/os-release; printf 'OS=%s\n' "$PRETTY_NAME"; fi
+          echo '--- Memory ---'
+          free -h
+          echo '--- Disk ---'
+          df -h /
+          echo '--- Swap ---'
+          swapon --show 2>/dev/null || true
+          echo '--- Docker ---'
+          if command -v docker >/dev/null 2>&1; then
+            docker --version
+            docker compose version 2>&1 || true
+            docker info --format 'SERVER={{.ServerVersion}}' 2>&1 || true
+          else
+            echo 'DOCKER=NOT_INSTALLED'
+          fi
+          echo '--- Listener ports (numbers only) ---'
+          if command -v ss >/dev/null 2>&1; then ss -ltnH | awk '{print $4}' | sed -E 's/.*:([0-9]+)$/\1/' | sort -nu | head -30; fi
+          echo 'PROBE_DONE=SUCCESS'
+          REMOTE_CHECK
