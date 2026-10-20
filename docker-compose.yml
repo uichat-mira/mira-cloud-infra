@@ -1,0 +1,20 @@
+name: mira-cloud-infra
+
+services:
+  new-api:
+    image: calciumion/new-api:v1.0.0-rc.37
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      TZ: Asia/Shanghai
+      GIN_MODE: release
+    volumes:
+      - ./data:/data
+    mem_limit: 512m
+    mem_reservation: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

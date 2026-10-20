@@ -1,0 +1,13 @@
+data/
+backups/
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+*.key
+*.pem
+logs/
+new-api-image.tar.gz
+.DS_Store

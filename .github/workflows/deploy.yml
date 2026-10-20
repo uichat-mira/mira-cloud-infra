@@ -1,0 +1,96 @@
+name: Deploy Mira New API
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - docker-compose.yml
+      - scripts/deploy.sh
+      - .github/workflows/deploy.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mira-cloud-infra-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy and local smoke
+    if: github.ref == 'refs/heads/prod' && vars.MIRA_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate configuration
+        run: bash scripts/check.sh
+
+      - name: Verify pinned SSH host identity
+        id: hostkey
+        shell: bash
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PINNED_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PINNED_HOSTS"
+          umask 077
+          printf '%s\n' "$PINNED_HOSTS" > "$RUNNER_TEMP/mira-known-hosts"
+          ssh-keygen -F "$HOST" -f "$RUNNER_TEMP/mira-known-hosts" >/dev/null
+          FINGERPRINT="$(ssh-keygen -lf "$RUNNER_TEMP/mira-known-hosts" -E sha256 | awk 'NR==1 {print $2}')"
+          test -n "$FINGERPRINT"
+          printf 'fingerprint=%s\n' "$FINGERPRINT" >> "$GITHUB_OUTPUT"
+
+      - name: Package fixed New API image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull calciumion/new-api:v1.0.0-rc.37
+          docker save calciumion/new-api:v1.0.0-rc.37 | gzip -1 > new-api-image.tar.gz
+          gzip -t new-api-image.tar.gz
+
+      - name: Prepare server directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          fingerprint: ${{ steps.hostkey.outputs.fingerprint }}
+          command_timeout: 2m
+          script: |
+            set -eu
+            mkdir -p /opt/mira-cloud-infra/data /opt/mira-cloud-infra/backups /opt/mira-cloud-infra/scripts
+            chmod 700 /opt/mira-cloud-infra/data /opt/mira-cloud-infra/backups
+            if test -f /opt/mira-cloud-infra/docker-compose.yml; then
+              cp /opt/mira-cloud-infra/docker-compose.yml "/opt/mira-cloud-infra/backups/compose-before-$(date -u +%Y%m%dT%H%M%SZ).yml"
+            fi
+
+      - name: Upload deployment bundle
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          fingerprint: ${{ steps.hostkey.outputs.fingerprint }}
+          source: "docker-compose.yml,scripts/deploy.sh,new-api-image.tar.gz"
+          target: "/opt/mira-cloud-infra"
+          overwrite: true
+
+      - name: Deploy, verify and record commit
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          fingerprint: ${{ steps.hostkey.outputs.fingerprint }}
+          command_timeout: 8m
+          script: |
+            set -eu
+            bash /opt/mira-cloud-infra/scripts/deploy.sh
+            printf '%s\n' '${{ github.sha }}' > /opt/mira-cloud-infra/.deployed-sha
