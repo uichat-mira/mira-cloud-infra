@@ -44,6 +44,7 @@ for name, source in [("deploy", deploy), ("diagnose", diagnose)]:
     assert "ssh-keygen -F" in source and "ssh-keygen -lf" in source
     assert "DEPLOY_SSH_PRIVATE_KEY" not in source
     assert "sshpass" not in source
+assert "vars.MIRA_DEPLOY_ENABLED == 'true'" in deploy, "deploy: missing explicit activation guard"
 assert "appleboy/scp-action@v1" in deploy, "deploy: SCP action missing"
 assert "workflow_dispatch:" in diagnose, "diagnose: manual rerun missing"
 assert "on:" in deploy and "on:" in diagnose

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy and local smoke
-    if: github.ref == 'refs/heads/prod'
+    if: github.ref == 'refs/heads/prod' && vars.MIRA_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: production
