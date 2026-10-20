@@ -42,11 +42,9 @@ jobs:
           ssh-keygen -l -f "$HOME/.ssh/known_hosts" >/dev/null
           PORT="${DEPLOY_PORT:-22}"
           REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
-          echo "Credential is present. Checking configured SSH user first."
-          cat > "$RUNNER_TEMP/mira-probe-readonly.sh" <<'REMOTE_CHECK'
+          sshpass -e ssh -T -p "$PORT" -o ConnectTimeout=12 -o NumberOfPasswordPrompts=1 -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$REMOTE" 'sh -s' <<'REMOTE_CHECK'
           set -u
           echo "PROBE_CONNECT=SUCCESS"
-          printf 'UTC='; date -u +%FT%TZ
           printf 'USER='; id -un
           printf 'UID='; id -u
           printf 'KERNEL='; uname -sr
@@ -61,33 +59,8 @@ jobs:
           if command -v docker >/dev/null 2>&1; then
             docker --version
             docker compose version 2>&1 || true
-            docker info --format 'SERVER={{.ServerVersion}}' 2>&1 || true
           else
             echo 'DOCKER=NOT_INSTALLED'
           fi
-          echo '--- Listener ports (numbers only) ---'
-          if command -v ss >/dev/null 2>&1; then ss -ltnH | awk '{print $4}' | sed -E 's/.*:([0-9]+)$/\1/' | sort -nu | head -30; fi
-          echo 'PROBE_DONE=SUCCESS'
-REMOTE_CHECK
-          try_login() {
-            local login="$1"
-            sshpass -e ssh -T -p "$PORT" -o ConnectTimeout=12 -o BatchMode=no -o NumberOfPasswordPrompts=1 -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "${login}@${DEPLOY_HOST}" 'sh -s' < "$RUNNER_TEMP/mira-probe-readonly.sh"
-          }
-          if try_login "$DEPLOY_USER"; then
-            echo "PROBE_AUTH_CONFIGURED_USER=SUCCESS"
-            exit 0
-          fi
-          if [[ "$DEPLOY_USER" == "admin" ]]; then
-            FALLBACK_USER="root"
-            FALLBACK_LABEL="root"
-          else
-            FALLBACK_USER="admin"
-            FALLBACK_LABEL="admin"
-          fi
-          echo "Configured username failed; trying one alternate common instance user (${FALLBACK_LABEL})."
-          if try_login "$FALLBACK_USER"; then
-            echo "PROBE_AUTH_ALTERNATE_USER=SUCCESS"
-            exit 0
-          fi
-          echo "PROBE_AUTH=FAILED (both attempts)"
-          exit 1
+          echo "PROBE_DONE=SUCCESS"
+          REMOTE_CHECK
