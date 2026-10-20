@@ -1,0 +1,70 @@
+name: Deploy Mira New API
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - docker-compose.yml
+      - scripts/deploy.sh
+      - .github/workflows/deploy.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mira-cloud-infra-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy and local smoke
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate configuration
+        run: bash scripts/check.sh
+
+      - name: Preflight SSH and pin host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_PRIVATE_KEY DEPLOY_KNOWN_HOSTS; do
+            test -n "${!key}" || { echo "Missing deployment secret: $key" >&2; exit 1; }
+          done
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          ssh-keygen -y -f "$HOME/.ssh/id_ed25519" >/dev/null
+          ssh-keygen -l -f "$HOME/.ssh/known_hosts" >/dev/null
+
+      - name: Package fixed New API image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull calciumion/new-api:v1.0.0-rc.37
+          docker save calciumion/new-api:v1.0.0-rc.37 | gzip -1 > new-api-image.tar.gz
+          gzip -t new-api-image.tar.gz
+
+      - name: Upload and deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
+          SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p "$PORT")
+          SCP=(scp -i "$HOME/.ssh/id_ed25519" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -P "$PORT")
+          "${SSH[@]}" "$REMOTE" 'mkdir -p /opt/mira-cloud-infra/data /opt/mira-cloud-infra/backups; if test -f /opt/mira-cloud-infra/docker-compose.yml; then cp /opt/mira-cloud-infra/docker-compose.yml "/opt/mira-cloud-infra/backups/compose-before-$(date -u +%Y%m%dT%H%M%SZ).yml"; fi'
+          "${SCP[@]}" docker-compose.yml scripts/deploy.sh new-api-image.tar.gz "$REMOTE:/opt/mira-cloud-infra/"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p /opt/mira-cloud-infra/scripts; mv /opt/mira-cloud-infra/deploy.sh /opt/mira-cloud-infra/scripts/deploy.sh; bash /opt/mira-cloud-infra/scripts/deploy.sh'
+          "${SSH[@]}" "$REMOTE" 'printf "%s\n" "'"$GITHUB_SHA"'" > /opt/mira-cloud-infra/.deployed-sha'
