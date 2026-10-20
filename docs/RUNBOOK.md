@@ -31,7 +31,7 @@ Obtain and independently verify the host's SSH public-key fingerprint **out of b
 Configure actual GitHub `prod` branch protection: require a pull request and a successful `Mira Gate`; prevent force-pushes and deletions. `required_approving_review_count: 0` lets a trusted maintainer or authorized operator merge without a separate human review. The branch rule is still enforced independently of Environment approval.
 
 ## Flow
-`feat/* → dev → test → prod`, with CI on `dev/test/prod`. `main` never deploys. Only a production-authorized promotion to `prod` can trigger SSH deployment.
+`feat/* → dev → test → prod`, with CI on `dev/test/prod`. `main` never deploys. Only a production-authorized promotion to `prod` **and** the repository Actions variable `MIRA_DEPLOY_ENABLED=true` can trigger SSH deployment. The variable is deliberately unset/off during first promotion, so the diagnostic workflow can reach `prod` without starting New API on an unprovisioned server. After Docker and SSH have been verified, a repository administrator can enable it once; subsequent relevant prod changes deploy automatically without Environment approval.
 
 Production workflow:
 1. Validate Compose and shell contracts; assert loopback-only service.
