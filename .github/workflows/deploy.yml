@@ -7,7 +7,6 @@ on:
       - docker-compose.yml
       - scripts/deploy.sh
       - .github/workflows/deploy.yml
-  workflow_dispatch:
 
 permissions:
   contents: read
