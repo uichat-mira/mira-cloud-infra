@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#F8F9FD">
   <meta name="description" content="Mira AI Gateway：面向 Mira 社区成员及自动化 Agent 的统一模型访问入口。">
+  <link rel="icon" type="image/png" href="https://assets.tomz.io/images/mira-logo.png">
   <title>Mira AI Gateway · 社区模型网关</title>
   <style>
     :root{color-scheme:light;--ink:#181B33;--muted:#667087;--accent:#5B5EF7;--line:#E2E6F0;--panel:#FFF;--bg:#F8F9FD}
@@ -19,8 +20,9 @@
     .wrap{position:relative;max-width:1160px;margin:auto;padding:0 36px}
     header{height:102px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(220,224,235,.75)}
     .brand{display:flex;align-items:center;gap:12px;font-weight:760;font-size:22px;letter-spacing:-.055em}
-    .mark{width:43px;height:43px;display:grid;place-items:center;border-radius:14px;background:var(--accent);color:white;box-shadow:0 7px 16px rgba(91,94,247,.2)}
-    .mark svg{height:29px;width:29px}
+    .mark{width:58px;height:58px;display:grid;place-items:center;border-radius:14px;background:#F7EADC;overflow:hidden;flex-shrink:0}
+    .mark img{display:block;width:100%;height:100%;object-fit:contain}
+    .node .gateway-logo{display:block;width:64px;height:52px;object-fit:contain}
     .brand small{font-size:11px;letter-spacing:.10em;text-transform:uppercase;font-weight:700;color:#8D92A5;display:block;margin-top:2px}
     .nav{display:flex;align-items:center;gap:26px;font-size:13px;font-weight:650}
     .nav span{color:#9299AA}
@@ -69,7 +71,7 @@
     .toast{position:fixed;bottom:28px;left:50%;transform:translate(-50%,16px);background:#232645;color:white;border-radius:10px;padding:11px 18px;font-size:13px;box-shadow:0 16px 36px rgba(30,35,80,.19);opacity:0;transition:.2s;pointer-events:none}
     .toast.show{opacity:1;transform:translate(-50%,0)}
     @media(max-width:930px){.hero{grid-template-columns:1fr;padding-top:64px;gap:0}.visual{min-height:420px}.section{margin-bottom:56px}}
-    @media(max-width:640px){.wrap{padding:0 22px}header{height:82px}.brand{font-size:19px}.mark{width:39px;height:39px}.nav{gap:0}.nav span{display:none}.nav a{font-size:12px;padding:11px 13px}.hero{padding-top:58px;padding-bottom:15px;min-height:auto}.intro{font-size:14px}.visual{min-height:370px}.flowbox{max-width:350px;padding:18px}.halo{width:330px;height:330px}.orbit{width:320px;height:320px}.orbit.two{width:244px;height:244px}.section{grid-template-columns:1fr;gap:12px}.feature{min-height:auto;padding:20px 22px}.feature h2{margin-top:12px}footer{flex-direction:column;align-items:flex-start}}
+    @media(max-width:640px){.wrap{padding:0 22px}header{height:82px}.brand{font-size:19px}.mark{width:51px;height:51px}.nav{gap:0}.nav span{display:none}.nav a{font-size:12px;padding:11px 13px}.hero{padding-top:58px;padding-bottom:15px;min-height:auto}.intro{font-size:14px}.visual{min-height:370px}.flowbox{max-width:350px;padding:18px}.halo{width:330px;height:330px}.orbit{width:320px;height:320px}.orbit.two{width:244px;height:244px}.section{grid-template-columns:1fr;gap:12px}.feature{min-height:auto;padding:20px 22px}.feature h2{margin-top:12px}footer{flex-direction:column;align-items:flex-start}}
     @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
   </style>
 </head>
@@ -79,7 +81,7 @@
       <header>
         <a class="brand" href="/" aria-label="Mira AI Gateway 首页">
           <span class="mark" aria-hidden="true">
-            <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 27V13L20 25L32 13V27" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 9L13 9" stroke="#CECFFF" stroke-width="3" stroke-linecap="round"/><circle cx="31" cy="31" r="2.5" fill="#D6D7FF"/></svg>
+            <img src="https://assets.tomz.io/images/mira-logo.png" alt="" width="58" height="58" loading="eager">
           </span>
           <span>Mira <small>AI Gateway</small></span>
         </a>
@@ -104,7 +106,7 @@
               <div class="network">
                 <div class="node"><strong>人</strong><span>Community</span></div>
                 <div class="connector" aria-hidden="true"></div>
-                <div class="node" style="background:#EFF0FF;border-color:#DBDDFE"><strong>M</strong><span>Mira Gateway</span></div>
+                <div class="node" style="background:#FAF0E8;border-color:#EEDBCD"><img class="gateway-logo" src="https://assets.tomz.io/images/mira-logo.png" width="64" height="52" alt="" loading="lazy"><span>Mira Gateway</span></div>
                 <div class="connector" aria-hidden="true"></div>
                 <div class="node"><strong>∞</strong><span>AI Models</span></div>
               </div>
