@@ -3,6 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 bash -n scripts/deploy.sh
+bash -n scripts/resolve-host-fingerprint.sh
 bash -n scripts/check.sh
 command -v docker >/dev/null || { echo "docker CLI required" >&2; exit 1; }
 docker compose -f docker-compose.yml config --quiet
@@ -41,9 +42,17 @@ for name, source in [("deploy", deploy), ("diagnose", diagnose)]:
     assert "secrets.DEPLOY_KNOWN_HOSTS" in source, f"{name}: verified host key secret missing"
     assert "appleboy/ssh-action@v1" in source, f"{name}: expected SSH action missing"
     assert "fingerprint: ${{ steps.hostkey.outputs.fingerprint }}" in source, f"{name}: SSH fingerprint missing"
-    assert "ssh-keygen -F" in source and "ssh-keygen -lf" in source
-    assert "DEPLOY_SSH_PRIVATE_KEY" not in source
-    assert "sshpass" not in source
+    assert "bash scripts/resolve-host-fingerprint.sh" in source
+    assert "secrets.DEPLOY_USER" in source and "secrets.DEPLOY_HOST" in source
+    assert "secrets.DEPLOY_PORT" in source
+host_identity = Path("scripts/resolve-host-fingerprint.sh").read_text()
+assert "HostKeyAlgorithms=ssh-ed25519" in host_identity
+assert "StrictHostKeyChecking=yes" in host_identity
+assert "ssh-keygen -F" in host_identity and "ssh-keygen -lf" in host_identity
+assert "ssh_host_ecdsa_key.pub" in host_identity
+assert "sshpass -e" in host_identity
+assert "DEPLOY_SSH_PRIVATE_KEY" not in deploy and "DEPLOY_SSH_PRIVATE_KEY" not in diagnose
+assert "sshpass" not in deploy and "sshpass" not in diagnose
 assert "vars.MIRA_DEPLOY_ENABLED == 'true'" in deploy, "deploy: missing explicit activation guard"
 assert "appleboy/scp-action@v1" in deploy, "deploy: SCP action missing"
 assert "workflow_dispatch:" in diagnose, "diagnose: manual rerun missing"

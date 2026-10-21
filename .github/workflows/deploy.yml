@@ -28,21 +28,16 @@ jobs:
       - name: Validate configuration
         run: bash scripts/check.sh
 
-      - name: Verify pinned SSH host identity
+      - name: Verify host and resolve Appleboy host fingerprint
         id: hostkey
         shell: bash
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_LOGIN: ${{ secrets.DEPLOY_USER }}
+          SSH_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          SSH_PORT: ${{ secrets.DEPLOY_PORT }}
           PINNED_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          test -n "$HOST" && test -n "$PINNED_HOSTS"
-          umask 077
-          printf '%s\n' "$PINNED_HOSTS" > "$RUNNER_TEMP/mira-known-hosts"
-          ssh-keygen -F "$HOST" -f "$RUNNER_TEMP/mira-known-hosts" >/dev/null
-          FINGERPRINT="$(ssh-keygen -lf "$RUNNER_TEMP/mira-known-hosts" -E sha256 | awk 'NR==1 {print $2}')"
-          test -n "$FINGERPRINT"
-          printf 'fingerprint=%s\n' "$FINGERPRINT" >> "$GITHUB_OUTPUT"
+        run: bash scripts/resolve-host-fingerprint.sh
 
       - name: Package fixed New API image
         shell: bash

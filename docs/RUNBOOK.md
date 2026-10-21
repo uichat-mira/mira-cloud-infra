@@ -28,6 +28,8 @@ Place these **environment secrets**, never repository files or comments:
 
 Obtain and independently verify the host's SSH public-key fingerprint **out of band** before recording `DEPLOY_KNOWN_HOSTS`. Do not silently accept a key obtained from the same untrusted network connection. The workflow enforces strict host-key checking.
 
+Appleboy's SSH client may negotiate the host's **ECDSA** key even when the trusted known_hosts entry pins **ED25519**. Before calling Appleboy, `scripts/resolve-host-fingerprint.sh` authenticates with the pinned ED25519 identity, then reads the server's ECDSA public-key fingerprint over that verified SSH connection. This avoids blindly trusting a fresh `ssh-keyscan` result, keeps the existing `DEPLOY_KNOWN_HOSTS` secret unchanged, and does not remove password authentication.
+
 Configure actual GitHub `prod` branch protection: require a pull request and a successful `Mira Gate`; prevent force-pushes and deletions. `required_approving_review_count: 0` lets a trusted maintainer or authorized operator merge without a separate human review. The branch rule is still enforced independently of Environment approval.
 
 ## Flow
