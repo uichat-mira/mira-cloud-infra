@@ -23,6 +23,7 @@ jobs:
     environment: production
     env:
       MIRA_PUBLIC_DOMAIN: ${{ vars.MIRA_PUBLIC_DOMAIN }}
+      MIRA_ALIAS_DOMAIN: ${{ vars.MIRA_ALIAS_DOMAIN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,6 +33,9 @@ jobs:
           set -euo pipefail
           [[ "$MIRA_PUBLIC_DOMAIN" =~ ^[a-z0-9][a-z0-9.-]{3,250}[a-z0-9]$ ]]
           [[ "$MIRA_PUBLIC_DOMAIN" == *.* ]]
+          [[ "$MIRA_ALIAS_DOMAIN" =~ ^[a-z0-9][a-z0-9.-]{3,250}[a-z0-9]$ ]]
+          [[ "$MIRA_ALIAS_DOMAIN" == *.* ]]
+          [[ "$MIRA_ALIAS_DOMAIN" != "$MIRA_PUBLIC_DOMAIN" ]]
           echo "Ingress hostname configured; awaiting safe backend preflight"
 
       - name: Verify New API initial admin has been configured
@@ -60,12 +64,13 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           MIRA_PUBLIC_DOMAIN: ${{ env.MIRA_PUBLIC_DOMAIN }}
+          MIRA_ALIAS_DOMAIN: ${{ env.MIRA_ALIAS_DOMAIN }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT || '22' }}
-          envs: MIRA_PUBLIC_DOMAIN
+          envs: MIRA_PUBLIC_DOMAIN,MIRA_ALIAS_DOMAIN
           command_timeout: 12m
           script: |
             set -eu
@@ -77,6 +82,9 @@ jobs:
               ''|*[!a-z0-9.-]*)
                 echo 'Invalid hostname' >&2; exit 1;;
             esac
+            case "$MIRA_ALIAS_DOMAIN" in
+              ''|*[!a-z0-9.-]*) echo 'Invalid alias hostname' >&2; exit 1;;
+            esac
             echo '[ingress] Install system Caddy reverse proxy'
             if ! command -v caddy >/dev/null 2>&1; then
               timeout 360 apt-get update -qq
@@ -87,7 +95,7 @@ jobs:
               cp -p /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-mira.$(date -u +%Y%m%dT%H%M%SZ)"
             fi
             cat > /etc/caddy/Caddyfile <<EOF
-            $MIRA_PUBLIC_DOMAIN {
+            $MIRA_PUBLIC_DOMAIN, $MIRA_ALIAS_DOMAIN {
                 encode gzip
                 @restricted_public_posts {
                     method POST
@@ -110,13 +118,13 @@ jobs:
             ss -ltnH | grep -E ':(80|443)[[:space:]]' || true
             echo 'ORIGIN_INGRESS_CONFIGURED'
 
-      - name: External HTTPS check from GitHub
+      - name: External HTTPS check of new alias from GitHub
         shell: bash
         run: |
           set -euo pipefail
-          echo '[ingress] Check HTTPS via existing proxied Cloudflare record'
+          echo '[ingress] Check public HTTPS on new domain'
           for i in $(seq 1 12); do
-            status=$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' --max-time 12 "https://$MIRA_PUBLIC_DOMAIN/api/status" || true)
+            status=$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' --max-time 12 "https://$MIRA_ALIAS_DOMAIN/api/status" || true)
             echo "attempt=$i external_http=$status"
             if [ "$status" = "200" ]; then
               echo 'PUBLIC_HTTPS_SMOKE_OK'
@@ -124,5 +132,5 @@ jobs:
             fi
             sleep 5
           done
-          echo '[ingress] External HTTPS not yet healthy: verify Alibaba Cloud inbound 80/443 rules and Cloudflare SSL Full (strict) after origin certificate issuance.' >&2
+          echo '[ingress] Alias external HTTPS not yet healthy: check Alibaba Cloud ESA proxy state; prefer DNS-only during origin HTTPS setup, and verify Alibaba Cloud ICP access authorization.' >&2
           exit 1
