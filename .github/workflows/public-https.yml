@@ -131,6 +131,7 @@ jobs:
             }
 
             $MIRA_PUBLIC_DOMAIN, $MIRA_ALIAS_DOMAIN {
+                bind $PRIVATE_IPV4
                 encode gzip
                 @restricted_public_posts {
                     method POST
@@ -140,38 +141,28 @@ jobs:
                 reverse_proxy 127.0.0.1:3000
             }
 
-            $MIRA_IP {
-                tls {
-                    issuer acme {
-                        profile shortlived
-                    }
-                }
-                @probe {
-                    method GET
-                    path /api/status
-                }
-                handle @probe {
-                    reverse_proxy 127.0.0.1:3000
-                }
-                handle {
-                    respond "Only HTTPS IP status checks are enabled." 403
-                }
-            }
-
-            https://$MIRA_IP:3000 {
+            $MIRA_IP, https://$MIRA_IP:3000 {
                 bind $PRIVATE_IPV4
                 tls {
                     issuer acme {
                         profile shortlived
                     }
                 }
-                encode gzip
+                @on3000 expression {port} == "3000"
+                @health {
+                    method GET
+                    path /api/status
+                }
                 @restricted_registration {
                     method POST
                     path /api/user/register
                 }
-                respond @restricted_registration "Public registration disabled" 403
-                reverse_proxy 127.0.0.1:3000
+                route {
+                    respond @restricted_registration "Public registration disabled" 403
+                    reverse_proxy @on3000 127.0.0.1:3000
+                    reverse_proxy @health 127.0.0.1:3000
+                    respond "Only HTTPS IP status checks are enabled." 403
+                }
             }
             EOF
             caddy fmt --overwrite "$BACKUP_DIR/Caddyfile.new"
@@ -221,6 +212,9 @@ jobs:
           status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 15 "$url/")
           echo "NEW_API_HTTPS_3000_HOME_HTTP=$status"
           test "$status" = 200
+          locked=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 15 "https://$MIRA_IP/")
+          echo "HEALTH_PORT_443_ROOT_HTTP=$locked"
+          test "$locked" = 403
           reg=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 15 -X POST "$url/api/user/register")
           echo "NEW_API_HTTPS_3000_REGISTRATION_HTTP=$reg"
           test "$reg" = 403
