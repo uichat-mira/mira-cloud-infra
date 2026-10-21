@@ -1,0 +1,37 @@
+name: Temporary read-only MiraAI DNS lookup
+
+on:
+  push:
+    branches:
+      - chore/temporary-dns-check-20261021
+    paths:
+      - .github/workflows/temporary-dns-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  dns:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Resolve public A record from three resolvers
+        shell: bash
+        run: |
+          set -uo pipefail
+          host=mira-ai.tomzlab.cn
+          expected=8.138.2.174
+          for resolver in 223.5.5.5 1.1.1.1 8.8.8.8; do
+            echo "----- resolver=$resolver -----"
+            dig @"$resolver" +time=3 +tries=1 +noall +answer "$host" A || true
+          done
+          echo "----- GitHub runner system DNS -----"
+          dig +time=3 +tries=1 +noall +answer "$host" A || true
+          echo "----- DNS match check -----"
+          answer="$(dig @223.5.5.5 +time=3 +tries=1 +short "$host" A)"
+          if printf '%s\n' "$answer" | grep -Fxq "$expected"; then
+            echo "DNS_EXPECTED_IP_CONFIRMED_BY_ALIDNS"
+          else
+            echo "DNS_UNVERIFIED_OR_MISMATCH"
+            exit 1
+          fi
