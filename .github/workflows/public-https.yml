@@ -94,7 +94,7 @@ jobs:
             if [ -s /etc/caddy/Caddyfile ]; then
               cp -p /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-mira.$(date -u +%Y%m%dT%H%M%SZ)"
             fi
-            PRIVATE_IPV4="$(ip -4 route get 1.1.1.1 | sed -nE 's/.* src ([0-9.]+).*/\\1/p' | head -n 1)"
+            PRIVATE_IPV4="$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1);exit}}')"
             test -n "$PRIVATE_IPV4"
             python3 -c 'import ipaddress,sys; assert ipaddress.ip_address(sys.argv[1]).is_private' "$PRIVATE_IPV4"
             # Keep Docker's 127.0.0.1:3000 binding unchanged.
