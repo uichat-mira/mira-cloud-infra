@@ -148,7 +148,7 @@ jobs:
                         profile shortlived
                     }
                 }
-                @on3000 expression {port} == "3000"
+                @on3000 expression {port} == 3000
                 @health {
                     method GET
                     path /api/status
