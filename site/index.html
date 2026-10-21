@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#F8F9FD">
+  <meta name="description" content="Mira AI Gateway：面向 Mira 社区成员及自动化 Agent 的统一模型访问入口。">
+  <title>Mira AI Gateway · 社区模型网关</title>
+  <style>
+    :root{color-scheme:light;--ink:#181B33;--muted:#667087;--accent:#5B5EF7;--line:#E2E6F0;--panel:#FFF;--bg:#F8F9FD}
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;min-width:320px;min-height:100vh;font-family:Inter,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+    a{color:inherit;text-decoration:none}
+    button{font:inherit;cursor:pointer}
+    .page{position:relative;overflow:hidden;min-height:100vh}
+    .page:before{content:"";position:absolute;pointer-events:none;top:-440px;right:-320px;width:1100px;height:1100px;border-radius:50%;background:radial-gradient(circle,rgba(105,105,250,.14) 0,rgba(180,195,255,.08) 33%,transparent 65%)}
+    .wrap{position:relative;max-width:1160px;margin:auto;padding:0 36px}
+    header{height:102px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(220,224,235,.75)}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:760;font-size:22px;letter-spacing:-.055em}
+    .mark{width:43px;height:43px;display:grid;place-items:center;border-radius:14px;background:var(--accent);color:white;box-shadow:0 7px 16px rgba(91,94,247,.2)}
+    .mark svg{height:29px;width:29px}
+    .brand small{font-size:11px;letter-spacing:.10em;text-transform:uppercase;font-weight:700;color:#8D92A5;display:block;margin-top:2px}
+    .nav{display:flex;align-items:center;gap:26px;font-size:13px;font-weight:650}
+    .nav span{color:#9299AA}
+    .nav a{border:1px solid var(--line);padding:12px 16px;border-radius:11px;background:#FFF;transition:box-shadow .2s}
+    .nav a:hover{box-shadow:0 8px 25px rgba(30,42,96,.1)}
+    .hero{display:grid;grid-template-columns:1.04fr .96fr;align-items:center;min-height:590px;padding-top:48px;padding-bottom:64px;gap:40px}
+    .eyebrow{display:inline-flex;align-items:center;gap:9px;padding:9px 12px;background:#EBEEFF;color:#5458C9;border:1px solid #DDE1FF;border-radius:8px;font-size:11px;letter-spacing:.09em;font-weight:760;text-transform:uppercase}
+    .eyebrow i{width:7px;height:7px;background:#6B6EFA;border-radius:50%;box-shadow:0 0 0 4px #DDE1FF}
+    h1{font-size:clamp(46px,5.3vw,72px);font-weight:780;letter-spacing:-.075em;line-height:1.16;margin:28px 0 25px}
+    h1 em{font-style:normal;color:var(--accent)}
+    .intro{color:var(--muted);font-size:16px;line-height:1.95;max-width:490px;margin:0}
+    .actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:37px}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:50px;padding:0 21px;border-radius:11px;font-size:14px;font-weight:680;transition:transform .2s,box-shadow .2s}
+    .btn:hover{transform:translateY(-2px)}
+    .primary{background:var(--accent);color:#FFF;box-shadow:0 10px 24px rgba(91,94,247,.18)}
+    .secondary{background:#FFF;color:#464C63;border:1px solid var(--line)}
+    .note{margin-top:22px;color:#8790A3;font-size:12px}
+    .visual{position:relative;min-height:412px;display:grid;place-items:center}
+    .halo{position:absolute;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(91,94,247,.14),rgba(176,167,246,.07) 50%,transparent 70%)}
+    .orbit{position:absolute;border:1px solid #DDE1F7;border-radius:50%;width:370px;height:370px;transform:rotate(-20deg)}
+    .orbit.two{width:280px;height:280px;border-style:dashed;border-color:#CCD4F0;transform:rotate(19deg)}
+    .dot{position:absolute;width:12px;height:12px;border-radius:50%;background:#5B5EF7;top:44px;left:102px;box-shadow:0 0 0 7px #E5E7FF}
+    .flowbox{position:relative;width:100%;max-width:392px;padding:25px;border:1px solid #E2E5F6;background:rgba(255,255,255,.92);box-shadow:0 35px 75px rgba(67,74,130,.10),0 4px 16px rgba(78,87,153,.04);border-radius:23px;backdrop-filter:blur(14px)}
+    .flowtop{display:flex;justify-content:space-between;align-items:center;padding-bottom:20px;border-bottom:1px solid #E9ECF5}
+    .micro{font-size:10px;font-weight:750;letter-spacing:.16em;color:#9DA4B7}
+    .service{font-size:11px;font-weight:650;color:#358E77;display:flex;align-items:center;gap:7px}
+    .service i{display:block;width:7px;height:7px;border-radius:50%;background:#46BCA0}
+    .service.offline{color:#9095A6}.service.offline i{background:#BBC1CD}
+    .network{display:flex;align-items:center;justify-content:space-between;margin-top:24px;gap:12px}
+    .node{width:100px;min-height:91px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:#F7F8FD;border:1px solid #ECEFFA;border-radius:15px;color:#656D83;font-size:11px;font-weight:650}
+    .node strong{font-size:22px;color:var(--accent);font-weight:760;line-height:1}
+    .connector{height:1px;background:linear-gradient(90deg,#BEC5FB,#8E90F7);flex:1;position:relative}
+    .connector:after{content:"";width:6px;height:6px;transform:rotate(45deg);border-top:1px solid #898BF2;border-right:1px solid #898BF2;position:absolute;right:0;top:-3px}
+    .flowlabel{margin-top:23px;background:#F5F6FD;border-radius:12px;padding:15px 16px}
+    .flowlabel span{font-size:10px;font-weight:720;letter-spacing:.10em;color:#939AAF}
+    .flowlabel code{display:block;font-size:14px;word-break:break-all;color:#383D68;margin-top:7px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,monospace}
+    .flowbottom{margin-top:18px;display:flex;align-items:center;gap:8px;color:#8B93A5;font-size:11px}
+    .flowbottom svg{color:#7376EB}
+    .section{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:17px;margin-bottom:84px}
+    .feature{background:#FFF;border:1px solid var(--line);border-radius:16px;padding:27px 27px 30px;min-height:167px}
+    .feature .num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:740;color:#888BFF}
+    .feature h2{font-size:17px;font-weight:720;letter-spacing:-.04em;margin:17px 0 8px}
+    .feature p{font-size:13px;color:#7A8498;line-height:1.75;margin:0}
+    footer{border-top:1px solid var(--line);padding:25px 0 31px;display:flex;justify-content:space-between;gap:15px;align-items:center;font-size:12px;color:#8D94A6}
+    footer strong{color:#5C647B;font-weight:700}
+    .toast{position:fixed;bottom:28px;left:50%;transform:translate(-50%,16px);background:#232645;color:white;border-radius:10px;padding:11px 18px;font-size:13px;box-shadow:0 16px 36px rgba(30,35,80,.19);opacity:0;transition:.2s;pointer-events:none}
+    .toast.show{opacity:1;transform:translate(-50%,0)}
+    @media(max-width:930px){.hero{grid-template-columns:1fr;padding-top:64px;gap:0}.visual{min-height:420px}.section{margin-bottom:56px}}
+    @media(max-width:640px){.wrap{padding:0 22px}header{height:82px}.brand{font-size:19px}.mark{width:39px;height:39px}.nav{gap:0}.nav span{display:none}.nav a{font-size:12px;padding:11px 13px}.hero{padding-top:58px;padding-bottom:15px;min-height:auto}.intro{font-size:14px}.visual{min-height:370px}.flowbox{max-width:350px;padding:18px}.halo{width:330px;height:330px}.orbit{width:320px;height:320px}.orbit.two{width:244px;height:244px}.section{grid-template-columns:1fr;gap:12px}.feature{min-height:auto;padding:20px 22px}.feature h2{margin-top:12px}footer{flex-direction:column;align-items:flex-start}}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="wrap">
+      <header>
+        <a class="brand" href="/" aria-label="Mira AI Gateway 首页">
+          <span class="mark" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 27V13L20 25L32 13V27" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 9L13 9" stroke="#CECFFF" stroke-width="3" stroke-linecap="round"/><circle cx="31" cy="31" r="2.5" fill="#D6D7FF"/></svg>
+          </span>
+          <span>Mira <small>AI Gateway</small></span>
+        </a>
+        <nav class="nav" aria-label="导航"><span>Community Infrastructure</span><a href="/sign-in">进入工作台 ↗</a></nav>
+      </header>
+      <main>
+        <section class="hero" aria-labelledby="hero-title">
+          <div>
+            <div class="eyebrow"><i aria-hidden="true"></i> MIRA COMMUNITY · MEMBERS ONLY</div>
+            <h1 id="hero-title">一个入口，<br>连接<em>更多智能。</em></h1>
+            <p class="intro">为 Mira 社区成员与自动化 Agent 提供统一的模型访问入口。让连接、授权与日常使用回归简单，把时间留给真正重要的创造。</p>
+            <div class="actions">
+              <a class="btn primary" href="/sign-in">进入工作台 <span aria-hidden="true">↗</span></a>
+              <button class="btn secondary" type="button" id="copy-api" aria-label="复制 API Base URL">复制 API 地址 <span aria-hidden="true">⧉</span></button>
+            </div>
+            <p class="note">仅供授权成员使用 · 无公开注册 · 由 Mira 社区维护</p>
+          </div>
+          <div class="visual" aria-label="Mira 网关连接示意">
+            <div class="halo" aria-hidden="true"></div><div class="orbit" aria-hidden="true"></div><div class="orbit two" aria-hidden="true"></div><div class="dot" aria-hidden="true"></div>
+            <div class="flowbox">
+              <div class="flowtop"><span class="micro">MIRA / CONNECTIVITY</span><span class="service offline" id="service-status"><i aria-hidden="true"></i><span>检测连接中</span></span></div>
+              <div class="network">
+                <div class="node"><strong>人</strong><span>Community</span></div>
+                <div class="connector" aria-hidden="true"></div>
+                <div class="node" style="background:#EFF0FF;border-color:#DBDDFE"><strong>M</strong><span>Mira Gateway</span></div>
+                <div class="connector" aria-hidden="true"></div>
+                <div class="node"><strong>∞</strong><span>AI Models</span></div>
+              </div>
+              <div class="flowlabel"><span>OPENAI-COMPATIBLE · BASE URL</span><code id="base-url">/v1</code></div>
+              <div class="flowbottom">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3 8-8 9-5-1-8-4-8-9V7l8-4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                独立授权 · 统一访问 · 无需重复配置
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="section" aria-label="服务特点">
+          <article class="feature"><span class="num">01 / ACCESS</span><h2>统一入口</h2><p>应用与 Agent 使用同一个兼容接口，减少重复接入和切换的负担。</p></article>
+          <article class="feature"><span class="num">02 / CONTROL</span><h2>成员独立授权</h2><p>访问凭据分别管理，便于限制权限、核对用量及及时撤销。</p></article>
+          <article class="feature"><span class="num">03 / PEOPLE</span><h2>技术服务于人</h2><p>不做复杂包装。把基础设施保持简单，让成员专注于自己的工作。</p></article>
+        </section>
+      </main>
+      <footer><span><strong>Mira</strong> · Community-operated AI Infrastructure</span><span>技术很酷，但人更重要。</span></footer>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>
+    (function () {
+      var base = window.location.origin + '/v1';
+      var code = document.getElementById('base-url');
+      var btn = document.getElementById('copy-api');
+      var toast = document.getElementById('toast');
+      var status = document.getElementById('service-status');
+      var timer;
+      code.textContent = base;
+      btn.addEventListener('click', async function () {
+        try {
+          await navigator.clipboard.writeText(base);
+          toast.textContent = 'API 地址已复制';
+        } catch (e) {
+          toast.textContent = '请复制卡片中的 API 地址';
+        }
+        toast.classList.add('show');
+        clearTimeout(timer);
+        timer = setTimeout(function(){ toast.classList.remove('show'); }, 2200);
+      });
+      fetch('/api/status', {cache:'no-store', credentials:'omit'})
+        .then(function(r){ if(!r.ok) throw Error('offline'); return r.json(); })
+        .then(function(d){if(d.success!==true) throw Error('offline');status.classList.remove('offline');status.lastElementChild.textContent = '服务在线';})
+        .catch(function(){status.classList.add('offline');status.lastElementChild.textContent = '暂未获取状态';});
+    })();
+  </script>
+</body>
+</html>

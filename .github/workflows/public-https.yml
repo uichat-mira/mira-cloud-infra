@@ -5,6 +5,7 @@ on:
     branches: [prod]
     paths:
       - .github/workflows/public-https.yml
+      - site/index.html
   workflow_dispatch:
 
 permissions:
@@ -39,6 +40,29 @@ jobs:
           [[ "$MIRA_ALIAS_DOMAIN" != "$MIRA_PUBLIC_DOMAIN" ]]
           [[ "$MIRA_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
           echo "Ingress hostname configured; awaiting safe backend preflight"
+
+      - name: Prepare isolated static homepage directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 2m
+          script: |
+            set -eu
+            install -d -m 0755 /var/www/mira-gateway/site
+
+      - name: Upload one static homepage (no app code or secrets)
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          source: "site/index.html"
+          target: "/var/www/mira-gateway"
+          overwrite: true
 
       - name: Verify New API initial admin has been configured
         uses: appleboy/ssh-action@v1
@@ -148,6 +172,11 @@ jobs:
                         profile shortlived
                     }
                 }
+                @landing {
+                    method GET HEAD
+                    path /
+                    expression {port} == 3000
+                }
                 @on3000 expression {port} == 3000
                 @health {
                     method GET
@@ -159,12 +188,19 @@ jobs:
                 }
                 route {
                     respond @restricted_registration "Public registration disabled" 403
+                    file_server @landing {
+                        root /var/www/mira-gateway/site
+                    }
                     reverse_proxy @on3000 127.0.0.1:3000
                     reverse_proxy @health 127.0.0.1:3000
                     respond "Only HTTPS IP status checks are enabled." 403
                 }
             }
             EOF
+            test -s /var/www/mira-gateway/site/index.html
+            chmod 0755 /var/www/mira-gateway /var/www/mira-gateway/site
+            chmod 0644 /var/www/mira-gateway/site/index.html
+            runuser -u caddy -- test -r /var/www/mira-gateway/site/index.html
             caddy fmt --overwrite "$BACKUP_DIR/Caddyfile.new"
             caddy validate --config "$BACKUP_DIR/Caddyfile.new" --adapter caddyfile
             cp -p "$BACKUP_DIR/Caddyfile.new" /etc/caddy/Caddyfile
@@ -212,6 +248,10 @@ jobs:
           status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 15 "$url/")
           echo "NEW_API_HTTPS_3000_HOME_HTTP=$status"
           test "$status" = 200
+          body=$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 "$url/")
+          echo "$body" | grep -Fq 'Mira AI Gateway'
+          echo "$body" | grep -Fq 'Community Infrastructure'
+          echo 'MIRA_STATIC_LANDING_BRAND_OK'
           locked=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 15 "https://$MIRA_IP/")
           echo "HEALTH_PORT_443_ROOT_HTTP=$locked"
           test "$locked" = 403
