@@ -1,0 +1,128 @@
+name: Configure Mira public HTTPS entry
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/public-https.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mira-public-https
+  cancel-in-progress: false
+
+jobs:
+  ingress:
+    name: Caddy HTTPS and external smoke
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      MIRA_PUBLIC_DOMAIN: ${{ vars.MIRA_PUBLIC_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check public hostname
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$MIRA_PUBLIC_DOMAIN" =~ ^[a-z0-9][a-z0-9.-]{3,250}[a-z0-9]$ ]]
+          [[ "$MIRA_PUBLIC_DOMAIN" == *.* ]]
+          echo "Ingress hostname configured; awaiting safe backend preflight"
+
+      - name: Verify New API initial admin has been configured
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 2m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0
+            curl --fail --silent --show-error --max-time 6 http://127.0.0.1:3000/api/status >/dev/null
+            echo '[preflight] local New API responds'
+            SETUP_STATE="$(curl --fail --silent --show-error --max-time 6 http://127.0.0.1:3000/api/setup | python3 -c 'import json,sys; d=json.load(sys.stdin); print("initialized" if d.get("data",{}).get("status") is True else "pending")')"
+            if [ "$SETUP_STATE" != initialized ]; then
+              echo 'INITIAL_ADMIN_PENDING: Configure initial admin via a private SSH tunnel before exposing the API.'
+              exit 1
+            fi
+            echo 'INITIAL_ADMIN_READY: safe to proceed with public HTTPS configuration'
+            echo '[preflight] current listeners'
+            ss -ltnH | grep -E ':(80|443|3000)[[:space:]]' || true
+
+      - name: Install and configure minimal HTTPS ingress
+        uses: appleboy/ssh-action@v1
+        env:
+          MIRA_PUBLIC_DOMAIN: ${{ env.MIRA_PUBLIC_DOMAIN }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          envs: MIRA_PUBLIC_DOMAIN
+          command_timeout: 12m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0
+            . /etc/os-release
+            test "$ID" = ubuntu
+            test "$VERSION_CODENAME" = noble
+            case "$MIRA_PUBLIC_DOMAIN" in
+              ''|*[!a-z0-9.-]*)
+                echo 'Invalid hostname' >&2; exit 1;;
+            esac
+            echo '[ingress] Install system Caddy reverse proxy'
+            if ! command -v caddy >/dev/null 2>&1; then
+              timeout 360 apt-get update -qq
+              timeout 600 env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends caddy
+            fi
+            install -d -m 0755 /etc/caddy
+            if [ -s /etc/caddy/Caddyfile ]; then
+              cp -p /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-mira.$(date -u +%Y%m%dT%H%M%SZ)"
+            fi
+            cat > /etc/caddy/Caddyfile <<EOF
+            $MIRA_PUBLIC_DOMAIN {
+                encode gzip
+                @restricted_public_posts {
+                    method POST
+                    path /api/setup /api/user/register
+                }
+                respond @restricted_public_posts "Public initialization and registration disabled" 403
+                reverse_proxy 127.0.0.1:3000
+            }
+            EOF
+            caddy fmt --overwrite /etc/caddy/Caddyfile
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            systemctl enable --now caddy
+            systemctl reload caddy
+            if command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then
+              ufw allow 80/tcp
+              ufw allow 443/tcp
+            fi
+            echo '[ingress] Caddy installed, running, and allowed through active UFW'
+            systemctl is-active caddy
+            ss -ltnH | grep -E ':(80|443)[[:space:]]' || true
+            echo 'ORIGIN_INGRESS_CONFIGURED'
+
+      - name: External HTTPS check from GitHub
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '[ingress] Check HTTPS via existing proxied Cloudflare record'
+          for i in $(seq 1 12); do
+            status=$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' --max-time 12 "https://$MIRA_PUBLIC_DOMAIN/api/status" || true)
+            echo "attempt=$i external_http=$status"
+            if [ "$status" = "200" ]; then
+              echo 'PUBLIC_HTTPS_SMOKE_OK'
+              exit 0
+            fi
+            sleep 5
+          done
+          echo '[ingress] External HTTPS not yet healthy: verify Alibaba Cloud inbound 80/443 rules and Cloudflare SSL Full (strict) after origin certificate issuance.' >&2
+          exit 1
