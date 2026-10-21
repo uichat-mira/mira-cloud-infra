@@ -4,155 +4,213 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#F8F9FD">
-  <meta name="description" content="Mira AI Gateway：面向 Mira 社区成员及自动化 Agent 的统一模型访问入口。">
+  <meta name="theme-color" content="#f5f4ed">
+  <meta name="description" content="MiraAI 是面向 Mira 社区成员与自动化 Agent 的统一模型访问服务。让插入简单一点。">
   <link rel="icon" type="image/png" href="https://assets.tomz.io/images/mira-logo.png">
-  <title>Mira AI Gateway · 社区模型网关</title>
+  <title>MiraAI · 让插入简单一点。</title>
   <style>
-    :root{color-scheme:light;--ink:#181B33;--muted:#667087;--accent:#5B5EF7;--line:#E2E6F0;--panel:#FFF;--bg:#F8F9FD}
-    *{box-sizing:border-box}
-    html{scroll-behavior:smooth}
-    body{margin:0;min-width:320px;min-height:100vh;font-family:Inter,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
-    a{color:inherit;text-decoration:none}
-    button{font:inherit;cursor:pointer}
-    .page{position:relative;overflow:hidden;min-height:100vh}
-    .page:before{content:"";position:absolute;pointer-events:none;top:-440px;right:-320px;width:1100px;height:1100px;border-radius:50%;background:radial-gradient(circle,rgba(105,105,250,.14) 0,rgba(180,195,255,.08) 33%,transparent 65%)}
-    .wrap{position:relative;max-width:1160px;margin:auto;padding:0 36px}
-    header{height:102px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(220,224,235,.75)}
-    .brand{display:flex;align-items:center;gap:12px;font-weight:760;font-size:22px;letter-spacing:-.055em}
-    .mark{width:58px;height:58px;display:grid;place-items:center;border-radius:14px;background:#F7EADC;overflow:hidden;flex-shrink:0}
-    .mark img{display:block;width:100%;height:100%;object-fit:contain}
-    .node .gateway-logo{display:block;width:64px;height:52px;object-fit:contain}
-    .brand small{font-size:11px;letter-spacing:.10em;text-transform:uppercase;font-weight:700;color:#8D92A5;display:block;margin-top:2px}
-    .nav{display:flex;align-items:center;gap:26px;font-size:13px;font-weight:650}
-    .nav span{color:#9299AA}
-    .nav a{border:1px solid var(--line);padding:12px 16px;border-radius:11px;background:#FFF;transition:box-shadow .2s}
-    .nav a:hover{box-shadow:0 8px 25px rgba(30,42,96,.1)}
-    .hero{display:grid;grid-template-columns:1.04fr .96fr;align-items:center;min-height:590px;padding-top:48px;padding-bottom:64px;gap:40px}
-    .eyebrow{display:inline-flex;align-items:center;gap:9px;padding:9px 12px;background:#EBEEFF;color:#5458C9;border:1px solid #DDE1FF;border-radius:8px;font-size:11px;letter-spacing:.09em;font-weight:760;text-transform:uppercase}
-    .eyebrow i{width:7px;height:7px;background:#6B6EFA;border-radius:50%;box-shadow:0 0 0 4px #DDE1FF}
-    h1{font-size:clamp(46px,5.3vw,72px);font-weight:780;letter-spacing:-.075em;line-height:1.16;margin:28px 0 25px}
-    h1 em{font-style:normal;color:var(--accent)}
-    .intro{color:var(--muted);font-size:16px;line-height:1.95;max-width:490px;margin:0}
-    .actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:37px}
-    .btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:50px;padding:0 21px;border-radius:11px;font-size:14px;font-weight:680;transition:transform .2s,box-shadow .2s}
-    .btn:hover{transform:translateY(-2px)}
-    .primary{background:var(--accent);color:#FFF;box-shadow:0 10px 24px rgba(91,94,247,.18)}
-    .secondary{background:#FFF;color:#464C63;border:1px solid var(--line)}
-    .note{margin-top:22px;color:#8790A3;font-size:12px}
-    .visual{position:relative;min-height:412px;display:grid;place-items:center}
-    .halo{position:absolute;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(91,94,247,.14),rgba(176,167,246,.07) 50%,transparent 70%)}
-    .orbit{position:absolute;border:1px solid #DDE1F7;border-radius:50%;width:370px;height:370px;transform:rotate(-20deg)}
-    .orbit.two{width:280px;height:280px;border-style:dashed;border-color:#CCD4F0;transform:rotate(19deg)}
-    .dot{position:absolute;width:12px;height:12px;border-radius:50%;background:#5B5EF7;top:44px;left:102px;box-shadow:0 0 0 7px #E5E7FF}
-    .flowbox{position:relative;width:100%;max-width:392px;padding:25px;border:1px solid #E2E5F6;background:rgba(255,255,255,.92);box-shadow:0 35px 75px rgba(67,74,130,.10),0 4px 16px rgba(78,87,153,.04);border-radius:23px;backdrop-filter:blur(14px)}
-    .flowtop{display:flex;justify-content:space-between;align-items:center;padding-bottom:20px;border-bottom:1px solid #E9ECF5}
-    .micro{font-size:10px;font-weight:750;letter-spacing:.16em;color:#9DA4B7}
-    .service{font-size:11px;font-weight:650;color:#358E77;display:flex;align-items:center;gap:7px}
-    .service i{display:block;width:7px;height:7px;border-radius:50%;background:#46BCA0}
-    .service.offline{color:#9095A6}.service.offline i{background:#BBC1CD}
-    .network{display:flex;align-items:center;justify-content:space-between;margin-top:24px;gap:12px}
-    .node{width:100px;min-height:91px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:#F7F8FD;border:1px solid #ECEFFA;border-radius:15px;color:#656D83;font-size:11px;font-weight:650}
-    .node strong{font-size:22px;color:var(--accent);font-weight:760;line-height:1}
-    .connector{height:1px;background:linear-gradient(90deg,#BEC5FB,#8E90F7);flex:1;position:relative}
-    .connector:after{content:"";width:6px;height:6px;transform:rotate(45deg);border-top:1px solid #898BF2;border-right:1px solid #898BF2;position:absolute;right:0;top:-3px}
-    .flowlabel{margin-top:23px;background:#F5F6FD;border-radius:12px;padding:15px 16px}
-    .flowlabel span{font-size:10px;font-weight:720;letter-spacing:.10em;color:#939AAF}
-    .flowlabel code{display:block;font-size:14px;word-break:break-all;color:#383D68;margin-top:7px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,monospace}
-    .flowbottom{margin-top:18px;display:flex;align-items:center;gap:8px;color:#8B93A5;font-size:11px}
-    .flowbottom svg{color:#7376EB}
-    .section{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:17px;margin-bottom:84px}
-    .feature{background:#FFF;border:1px solid var(--line);border-radius:16px;padding:27px 27px 30px;min-height:167px}
-    .feature .num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:740;color:#888BFF}
-    .feature h2{font-size:17px;font-weight:720;letter-spacing:-.04em;margin:17px 0 8px}
-    .feature p{font-size:13px;color:#7A8498;line-height:1.75;margin:0}
-    footer{border-top:1px solid var(--line);padding:25px 0 31px;display:flex;justify-content:space-between;gap:15px;align-items:center;font-size:12px;color:#8D94A6}
-    footer strong{color:#5C647B;font-weight:700}
-    .toast{position:fixed;bottom:28px;left:50%;transform:translate(-50%,16px);background:#232645;color:white;border-radius:10px;padding:11px 18px;font-size:13px;box-shadow:0 16px 36px rgba(30,35,80,.19);opacity:0;transition:.2s;pointer-events:none}
-    .toast.show{opacity:1;transform:translate(-50%,0)}
-    @media(max-width:930px){.hero{grid-template-columns:1fr;padding-top:64px;gap:0}.visual{min-height:420px}.section{margin-bottom:56px}}
-    @media(max-width:640px){.wrap{padding:0 22px}header{height:82px}.brand{font-size:19px}.mark{width:51px;height:51px}.nav{gap:0}.nav span{display:none}.nav a{font-size:12px;padding:11px 13px}.hero{padding-top:58px;padding-bottom:15px;min-height:auto}.intro{font-size:14px}.visual{min-height:370px}.flowbox{max-width:350px;padding:18px}.halo{width:330px;height:330px}.orbit{width:320px;height:320px}.orbit.two{width:244px;height:244px}.section{grid-template-columns:1fr;gap:12px}.feature{min-height:auto;padding:20px 22px}.feature h2{margin-top:12px}footer{flex-direction:column;align-items:flex-start}}
-    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+    :root {
+      color-scheme: light;
+      --primary: #c96442;
+      --primary-active: #a95034;
+      --ink: #141413;
+      --body: #3d3d3a;
+      --muted: #5e5d59;
+      --hairline: #e8e6dc;
+      --canvas: #f5f4ed;
+      --surface: #faf9f5;
+      --soft: #e8e6dc;
+      --dark: #181715;
+      --dark-elevated: #252320;
+      --on-dark: #faf9f5;
+      --on-dark-muted: #a09d96;
+      --font-display: Georgia, "Iowan Old Style", "Songti SC", "Noto Serif CJK SC", serif;
+      --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; min-width: 320px; background: var(--canvas); color: var(--ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+    a { color: inherit; text-decoration: none; }
+    a:focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; }
+    .container { width: min(1184px, calc(100% - 88px)); margin-inline: auto; }
+    .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .13em; color: var(--primary-active); text-transform: uppercase; }
+    .site-header { border-bottom: 1px solid var(--hairline); }
+    .site-header__inner { height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { display: inline-flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 730; letter-spacing: -.045em; }
+    .brand__logo { width: 42px; height: 42px; display: block; border-radius: 10px; background: var(--canvas); object-fit: contain; }
+    .header-link { display: inline-flex; align-items: center; gap: 9px; padding: 10px 0; font-size: 14px; font-weight: 600; }
+    .header-link:hover { color: var(--primary-active); }
+    .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(350px, .92fr); align-items: center; gap: clamp(32px, 6vw, 92px); padding-block: 104px 116px; }
+    .hero__copy { max-width: 610px; }
+    .hero h1 { margin: 21px 0 24px; font-family: var(--font-display); font-size: clamp(52px, 5.6vw, 80px); font-weight: 500; letter-spacing: -.055em; line-height: 1.13; }
+    .hero h1 span { color: var(--primary); }
+    .hero__intro { max-width: 525px; margin: 0; color: var(--body); font-size: 17px; line-height: 1.95; }
+    .hero__actions { display: flex; align-items: center; gap: 16px; margin-top: 34px; }
+    .button { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; gap: 13px; padding: 0 22px; border-radius: 8px; background: var(--primary); color: #fff; font-size: 14px; font-weight: 620; transition: background .16s ease, transform .16s ease; }
+    .button:hover { background: var(--primary-active); transform: translateY(-1px); }
+    .hero__access { margin: 17px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .diagram { position: relative; isolation: isolate; padding: 22px; overflow: hidden; border: 1px solid #dedbd1; border-radius: 18px; background: var(--surface); box-shadow: 0 20px 60px rgba(42, 36, 25, .055); }
+    .diagram:before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(circle at 50% 44%, rgba(201,100,66,.105), transparent 57%); }
+    .diagram__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 19px; border-bottom: 1px solid var(--hairline); font-size: 10px; letter-spacing: .08em; color: var(--muted); }
+    .diagram__head strong { color: var(--primary-active); font-weight: 650; }
+    .diagram__body { padding: 40px 8px 34px; display: flex; flex-direction: column; align-items: center; }
+    .diagram__sources { width: 100%; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+    .diagram__node { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 59px; border: 1px solid var(--hairline); border-radius: 11px; background: #fff; font-size: 12px; font-weight: 600; }
+    .diagram__node svg { width: 17px; height: 17px; color: var(--primary); }
+    .diagram__stem { width: 1px; height: 29px; background: #cdbeb3; }
+    .diagram__core { display: flex; align-items: center; gap: 14px; width: min(100%, 270px); padding: 15px; border: 1px solid #d7b6a4; border-radius: 12px; background: #f8ede6; box-shadow: 0 8px 20px rgba(122,79,53,.06); }
+    .diagram__core img { display: block; width: 49px; height: 49px; flex: none; border-radius: 9px; object-fit: contain; }
+    .diagram__core strong { display: block; font-size: 18px; letter-spacing: -.03em; }
+    .diagram__core small { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
+    .diagram__target { min-width: 190px; padding: 12px 22px; border: 1px dashed #cdbeb3; border-radius: 9px; text-align: center; color: var(--body); font-size: 12px; }
+    .diagram__foot { padding-top: 16px; border-top: 1px solid var(--hairline); font-size: 11px; color: var(--muted); text-align: center; }
+    .capabilities { border-top: 1px solid var(--hairline); padding-block: 94px 102px; }
+    .section-heading { max-width: 690px; }
+    .section-heading h2, .private__copy h2 { margin: 14px 0 0; font-family: var(--font-display); font-size: clamp(34px, 3.8vw, 48px); font-weight: 500; letter-spacing: -.035em; line-height: 1.2; }
+    .section-heading p { max-width: 580px; margin: 18px 0 0; color: var(--muted); font-size: 15px; line-height: 1.8; }
+    .capabilities__grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; margin-top: 37px; }
+    .capability { min-height: 235px; padding: 30px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface); }
+    .capability__number { font-size: 11px; font-weight: 650; letter-spacing: .11em; color: var(--primary-active); }
+    .capability h3 { margin: 38px 0 12px; font-size: 19px; font-weight: 650; letter-spacing: -.025em; }
+    .capability p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.75; }
+    .private { background: var(--dark); color: var(--on-dark); }
+    .private__inner { display: grid; grid-template-columns: minmax(0,1fr) minmax(330px, .9fr); align-items: center; gap: clamp(30px, 6vw, 92px); padding-block: 100px; }
+    .private__copy .eyebrow { color: #e9ac92; }
+    .private__copy p { max-width: 500px; margin: 22px 0 0; color: var(--on-dark-muted); font-size: 15px; line-height: 1.85; }
+    .private__steps { overflow: hidden; border: 1px solid #393631; border-radius: 14px; }
+    .private__step { display: grid; grid-template-columns: 38px minmax(0,1fr); align-items: start; gap: 13px; padding: 23px 25px; }
+    .private__step + .private__step { border-top: 1px solid #393631; }
+    .private__step > span { color: #cf8b70; font-size: 11px; letter-spacing: .05em; }
+    .private__step strong { display: block; font-size: 15px; font-weight: 610; }
+    .private__step p { margin: 6px 0 0; color: var(--on-dark-muted); font-size: 12px; line-height: 1.65; }
+    .site-footer { background: var(--canvas); }
+    .site-footer__inner { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding-block: 32px; color: var(--muted); font-size: 12px; }
+    .site-footer__inner strong { color: var(--ink); }
+    @media(max-width: 980px) {
+      .hero, .private__inner { grid-template-columns: minmax(0,1fr); }
+      .hero { padding-block: 78px 86px; }
+      .hero__copy { max-width: 700px; }
+      .diagram { width: min(100%, 590px); }
+      .private__inner { padding-block: 78px; }
+    }
+    @media(max-width: 700px) {
+      .container { width: calc(100% - 40px); }
+      .site-header__inner { height: 68px; }
+      .brand { font-size: 18px; }
+      .brand__logo { width: 36px; height: 36px; }
+      .header-link { font-size: 13px; }
+      .hero { gap: 46px; padding-block: 64px 74px; }
+      .hero h1 { font-size: clamp(46px, 11vw, 64px); }
+      .hero__intro { font-size: 15px; }
+      .diagram { padding: 16px; }
+      .diagram__body { padding: 28px 0 23px; }
+      .diagram__node { gap: 5px; font-size: 11px; }
+      .capabilities { padding-block: 70px; }
+      .capabilities__grid { grid-template-columns: 1fr; gap: 12px; margin-top: 28px; }
+      .capability { min-height: 0; padding: 24px; }
+      .capability h3 { margin-top: 19px; }
+      .private__inner { padding-block: 70px; }
+      .site-footer__inner { align-items: flex-start; flex-direction: column; gap: 9px; }
+    }
+    @media(prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .button { transition: none; }
+    }
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="wrap">
-      <header>
-        <a class="brand" href="/" aria-label="Mira AI Gateway 首页">
-          <span class="mark" aria-hidden="true">
-            <img src="https://assets.tomz.io/images/mira-logo.png" alt="" width="58" height="58" loading="eager">
-          </span>
-          <span>Mira <small>AI Gateway</small></span>
-        </a>
-        <nav class="nav" aria-label="导航"><span>Community Infrastructure</span><a href="/sign-in">进入工作台 ↗</a></nav>
-      </header>
-      <main>
-        <section class="hero" aria-labelledby="hero-title">
-          <div>
-            <div class="eyebrow"><i aria-hidden="true"></i> MIRA COMMUNITY · MEMBERS ONLY</div>
-            <h1 id="hero-title">一个入口，<br>连接<em>更多智能。</em></h1>
-            <p class="intro">为 Mira 社区成员与自动化 Agent 提供统一的模型访问入口。让连接、授权与日常使用回归简单，把时间留给真正重要的创造。</p>
-            <div class="actions">
-              <a class="btn primary" href="/sign-in">进入工作台 <span aria-hidden="true">↗</span></a>
-              <button class="btn secondary" type="button" id="copy-api" aria-label="复制 API Base URL">复制 API 地址 <span aria-hidden="true">⧉</span></button>
-            </div>
-            <p class="note">仅供授权成员使用 · 无公开注册 · 由 Mira 社区维护</p>
-          </div>
-          <div class="visual" aria-label="Mira 网关连接示意">
-            <div class="halo" aria-hidden="true"></div><div class="orbit" aria-hidden="true"></div><div class="orbit two" aria-hidden="true"></div><div class="dot" aria-hidden="true"></div>
-            <div class="flowbox">
-              <div class="flowtop"><span class="micro">MIRA / CONNECTIVITY</span><span class="service offline" id="service-status"><i aria-hidden="true"></i><span>检测连接中</span></span></div>
-              <div class="network">
-                <div class="node"><strong>人</strong><span>Community</span></div>
-                <div class="connector" aria-hidden="true"></div>
-                <div class="node" style="background:#FAF0E8;border-color:#EEDBCD"><img class="gateway-logo" src="https://assets.tomz.io/images/mira-logo.png" width="64" height="52" alt="" loading="lazy"><span>Mira Gateway</span></div>
-                <div class="connector" aria-hidden="true"></div>
-                <div class="node"><strong>∞</strong><span>AI Models</span></div>
-              </div>
-              <div class="flowlabel"><span>OPENAI-COMPATIBLE · BASE URL</span><code id="base-url">/v1</code></div>
-              <div class="flowbottom">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3 8-8 9-5-1-8-4-8-9V7l8-4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                独立授权 · 统一访问 · 无需重复配置
-              </div>
-            </div>
-          </div>
-        </section>
-        <section class="section" aria-label="服务特点">
-          <article class="feature"><span class="num">01 / ACCESS</span><h2>统一入口</h2><p>应用与 Agent 使用同一个兼容接口，减少重复接入和切换的负担。</p></article>
-          <article class="feature"><span class="num">02 / CONTROL</span><h2>成员独立授权</h2><p>访问凭据分别管理，便于限制权限、核对用量及及时撤销。</p></article>
-          <article class="feature"><span class="num">03 / PEOPLE</span><h2>技术服务于人</h2><p>不做复杂包装。把基础设施保持简单，让成员专注于自己的工作。</p></article>
-        </section>
-      </main>
-      <footer><span><strong>Mira</strong> · Community-operated AI Infrastructure</span><span>技术很酷，但人更重要。</span></footer>
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="brand" href="/" aria-label="MiraAI 首页">
+        <img class="brand__logo" src="https://assets.tomz.io/images/mira-logo.png" width="42" height="42" alt="">
+        <span>MiraAI</span>
+      </a>
+      <nav aria-label="主导航">
+        <a class="header-link" href="/sign-in">成员登录 <span aria-hidden="true">↗</span></a>
+      </nav>
     </div>
-  </div>
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script>
-    (function () {
-      var base = window.location.origin + '/v1';
-      var code = document.getElementById('base-url');
-      var btn = document.getElementById('copy-api');
-      var toast = document.getElementById('toast');
-      var status = document.getElementById('service-status');
-      var timer;
-      code.textContent = base;
-      btn.addEventListener('click', async function () {
-        try {
-          await navigator.clipboard.writeText(base);
-          toast.textContent = 'API 地址已复制';
-        } catch (e) {
-          toast.textContent = '请复制卡片中的 API 地址';
-        }
-        toast.classList.add('show');
-        clearTimeout(timer);
-        timer = setTimeout(function(){ toast.classList.remove('show'); }, 2200);
-      });
-      fetch('/api/status', {cache:'no-store', credentials:'omit'})
-        .then(function(r){ if(!r.ok) throw Error('offline'); return r.json(); })
-        .then(function(d){if(d.success!==true) throw Error('offline');status.classList.remove('offline');status.lastElementChild.textContent = '服务在线';})
-        .catch(function(){status.classList.add('offline');status.lastElementChild.textContent = '暂未获取状态';});
-    })();
-  </script>
+  </header>
+  <main>
+    <section class="container hero" aria-labelledby="hero-title">
+      <div class="hero__copy">
+        <span class="eyebrow">MIRA COMMUNITY · AI INFRASTRUCTURE</span>
+        <h1 id="hero-title">让插入<br><span>简单一点。</span></h1>
+        <p class="hero__intro">MiraAI 为社区成员与自动化 Agent 提供统一的模型访问服务。统一接入、独立授权、清晰管理，把复杂留在基础设施里。</p>
+        <div class="hero__actions">
+          <a class="button" href="/sign-in">进入控制台 <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="hero__access">仅面向授权的 Mira 社区成员 · 访问权限由管理员发放</p>
+      </div>
+      <div class="diagram" role="img" aria-label="社区成员与自动化 Agent 通过 MiraAI 连接模型能力的示意图">
+        <div class="diagram__head"><span>MIRA / CONNECTION</span><strong>COMMUNITY ONLY</strong></div>
+        <div class="diagram__body">
+          <div class="diagram__sources">
+            <div class="diagram__node">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg>
+              <span>社区成员</span>
+            </div>
+            <div class="diagram__node">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="2"/><path d="M9 6V3m6 3V3M9 12h.01M15 12h.01M9 16h6"/></svg>
+              <span>自动化 Agent</span>
+            </div>
+          </div>
+          <div class="diagram__stem" aria-hidden="true"></div>
+          <div class="diagram__core">
+            <img src="https://assets.tomz.io/images/mira-logo.png" width="49" height="49" alt="">
+            <div><strong>MiraAI</strong><small>统一模型访问服务</small></div>
+          </div>
+          <div class="diagram__stem" aria-hidden="true"></div>
+          <div class="diagram__target">模型能力</div>
+        </div>
+        <div class="diagram__foot">一个入口 · 独立授权 · 按需使用</div>
+      </div>
+    </section>
+    <section class="capabilities" aria-labelledby="capabilities-title">
+      <div class="container">
+        <div class="section-heading">
+          <span class="eyebrow">CORE CAPABILITIES</span>
+          <h2 id="capabilities-title">少一点接入负担，多一点创造空间。</h2>
+          <p>不堆砌复杂功能，只把社区真正需要的模型访问能力做好。</p>
+        </div>
+        <div class="capabilities__grid">
+          <article class="capability">
+            <span class="capability__number">01 / CONNECT</span>
+            <h3>统一接入</h3>
+            <p>提供兼容 OpenAI API 的访问方式，便于应用和 Agent 连接模型服务。</p>
+          </article>
+          <article class="capability">
+            <span class="capability__number">02 / ACCESS</span>
+            <h3>独立授权</h3>
+            <p>管理员为成员分配访问凭据，成员按各自权限使用与管理。</p>
+          </article>
+          <article class="capability">
+            <span class="capability__number">03 / USAGE</span>
+            <h3>用量管理</h3>
+            <p>通过控制台查看使用情况，便于了解消耗并管理访问权限。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+    <section class="private" aria-labelledby="private-title">
+      <div class="container private__inner">
+        <div class="private__copy">
+          <span class="eyebrow">BUILT FOR OUR COMMUNITY</span>
+          <h2 id="private-title">社区专用，<br>边界清楚。</h2>
+          <p>MiraAI 不提供公开注册。访问凭据由管理员发放，接入资料与具体模型信息只对授权成员开放。把基础设施留给真正需要它的人。</p>
+        </div>
+        <div class="private__steps" aria-label="MiraAI 社区访问方式">
+          <div class="private__step"><span>01</span><div><strong>管理员发放</strong><p>由社区管理员分配账号与访问权限。</p></div></div>
+          <div class="private__step"><span>02</span><div><strong>成员接入</strong><p>授权成员登录控制台，获取自己的使用信息。</p></div></div>
+          <div class="private__step"><span>03</span><div><strong>独立管理</strong><p>成员凭据与使用情况分别管理，按需调整或撤销。</p></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <span><strong>MiraAI</strong> · Community-operated AI Infrastructure</span>
+      <span>技术很酷，但人更重要。</span>
+    </div>
+  </footer>
 </body>
 </html>
