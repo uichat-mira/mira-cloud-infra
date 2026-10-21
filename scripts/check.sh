@@ -51,8 +51,8 @@ assert "StrictHostKeyChecking=yes" in host_identity
 assert "ssh-keygen -F" in host_identity and "ssh-keygen -lf" in host_identity
 assert "ssh_host_ecdsa_key.pub" in host_identity
 assert "sshpass -e" in host_identity
-    assert "DEPLOY_SSH_PRIVATE_KEY" not in source
-    assert "sshpass" not in source
+assert "DEPLOY_SSH_PRIVATE_KEY" not in deploy and "DEPLOY_SSH_PRIVATE_KEY" not in diagnose
+assert "sshpass" not in deploy and "sshpass" not in diagnose
 assert "vars.MIRA_DEPLOY_ENABLED == 'true'" in deploy, "deploy: missing explicit activation guard"
 assert "appleboy/scp-action@v1" in deploy, "deploy: SCP action missing"
 assert "workflow_dispatch:" in diagnose, "diagnose: manual rerun missing"
