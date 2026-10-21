@@ -24,11 +24,8 @@ Place these **environment secrets**, never repository files or comments:
 | `DEPLOY_USER` | deploy account |
 | `DEPLOY_PORT` | SSH port, normally `22` |
 | `DEPLOY_PASSWORD` | SSH password for `DEPLOY_USER`, passed to the maintained `appleboy/ssh-action` and `appleboy/scp-action` steps |
-| `DEPLOY_KNOWN_HOSTS` | trusted, pre-verified OpenSSH known_hosts entry, including `[host]:port` format for nonstandard ports |
 
-Obtain and independently verify the host's SSH public-key fingerprint **out of band** before recording `DEPLOY_KNOWN_HOSTS`. Do not silently accept a key obtained from the same untrusted network connection. The workflow enforces strict host-key checking.
-
-Appleboy's SSH client may negotiate the host's **ECDSA** key even when the trusted known_hosts entry pins **ED25519**. Before calling Appleboy, `scripts/resolve-host-fingerprint.sh` authenticates with the pinned ED25519 identity, then reads the server's ECDSA public-key fingerprint over that verified SSH connection. This avoids blindly trusting a fresh `ssh-keyscan` result, keeps the existing `DEPLOY_KNOWN_HOSTS` secret unchanged, and does not remove password authentication.
+SSH uses Appleboy's direct username/password connection (like the Sanchuang gateway reference), without a pinned fingerprint in the workflow. This intentionally omits independent server host identity verification; DNS/network interception could expose the password, especially while authenticating as root. The operator explicitly authorized this bootstrap tradeoff to restore unattended diagnostics. Restrict production secret access, protect prod branch, use strong credentials and limit SSH ingress. Revisit trusted host identity verification before expanding usage.
 
 Configure actual GitHub `prod` branch protection: require a pull request and a successful `Mira Gate`; prevent force-pushes and deletions. `required_approving_review_count: 0` lets a trusted maintainer or authorized operator merge without a separate human review. The branch rule is still enforced independently of Environment approval.
 
@@ -38,7 +35,7 @@ Configure actual GitHub `prod` branch protection: require a pull request and a s
 Production workflow:
 1. Validate Compose and shell contracts; assert loopback-only service.
 2. Pull the fixed New API image on GitHub Actions, save and gzip it to avoid requiring registry pulls from the Guangzhou host.
-3. Authenticate with username/password from GitHub Environment Secrets using `appleboy/ssh-action` and `appleboy/scp-action`, verify the server's pinned SHA-256 host fingerprint, and upload the bundle to `/opt/mira-cloud-infra`.
+3. Authenticate with username/password from GitHub Environment Secrets using `appleboy/ssh-action` and `appleboy/scp-action`, and upload the bundle to `/opt/mira-cloud-infra`.
 4. Stop the running SQLite writer if present, take a restricted data snapshot, and load the image.
 5. Start Compose without pulling, check `http://127.0.0.1:3000/api/status` from the host.
 6. Record commit SHA on host. Production smoke is **local only**; this does not establish public HTTPS or upstream model connectivity.
@@ -47,7 +44,7 @@ Production workflow:
 
 `.github/workflows/diagnose.yml` probes OS, memory, disk, swap, Docker and the localhost API without changing the server. It runs when the diagnostic workflow changes on `prod` and supports `workflow_dispatch` when the workflow exists on GitHub's default branch. A successful prior run may also be re-run from GitHub Actions without changing source files.
 
-Diagnostics and deployments both use the `production` Environment Secrets but should not require human Environment approval after `prod` is protected. Keep the pinned host fingerprint check: `DEPLOY_KNOWN_HOSTS` is the validated known_hosts line, not the fingerprint string.
+Diagnostics and deployments both use the `production` Environment Secrets but should not require human Environment approval after `prod` is protected. No separate fingerprint preflight is performed. Reassess this operational security tradeoff after initial connectivity is established.
 
 ## Initial private access
 From an authorized workstation, create an SSH local tunnel:
