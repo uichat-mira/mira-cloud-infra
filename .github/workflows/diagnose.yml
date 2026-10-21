@@ -53,6 +53,22 @@ jobs:
             if command -v ss >/dev/null 2>&1; then
               ss -ltnH | awk '{print $4}' | sed -nE 's/.*:([0-9]+)$/\1/p' | sort -nu | head -30
             fi
+            echo '=== Caddy package, version and service ==='
+            if command -v caddy >/dev/null 2>&1; then
+              caddy version
+              systemctl is-active caddy || true
+              apt-cache policy caddy | head -n 15
+            else
+              echo 'CADDY=NOT_INSTALLED'
+            fi
+            echo '=== HTTPS IP local TLS handshake result ==='
+            if command -v openssl >/dev/null 2>&1; then
+              if timeout 6 sh -c 'printf "" | openssl s_client -connect 127.0.0.1:443 -verify_return_error -showcerts >/dev/null 2>&1'; then
+                echo 'IP_TLS_LOOPBACK=ACCEPTED'
+              else
+                echo 'IP_TLS_LOOPBACK=NOT_YET_AVAILABLE'
+              fi
+            fi
             echo '=== gateway local response ==='
             if command -v curl >/dev/null 2>&1; then
               curl --silent --output /dev/null --max-time 3 --write-out 'HTTP_STATUS=%{http_code}\n' http://127.0.0.1:3000/api/status || true
