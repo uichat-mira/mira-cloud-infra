@@ -158,18 +158,20 @@ jobs:
                 }
             }
 
-            http://:3000 {
+            https://$MIRA_IP:3000 {
                 bind $PRIVATE_IPV4
-                @probe {
-                    method GET
-                    path /api/status
+                tls {
+                    issuer acme {
+                        profile shortlived
+                    }
                 }
-                handle @probe {
-                    reverse_proxy 127.0.0.1:3000
+                encode gzip
+                @restricted_registration {
+                    method POST
+                    path /api/user/register
                 }
-                handle {
-                    respond "Status test only; HTTPS required for credentials." 403
-                }
+                respond @restricted_registration "Public registration disabled" 403
+                reverse_proxy 127.0.0.1:3000
             }
             EOF
             caddy fmt --overwrite "$BACKUP_DIR/Caddyfile.new"
@@ -179,14 +181,14 @@ jobs:
             systemctl reload caddy
             systemctl is-active --quiet caddy
             curl -fsS --max-time 5 http://127.0.0.1:3000/api/status >/dev/null
-            curl -fsS --max-time 5 "http://$PRIVATE_IPV4:3000/api/status" >/dev/null
+            curl -fsS --connect-timeout 3 --max-time 8 --resolve "$MIRA_IP:3000:$PRIVATE_IPV4" "https://$MIRA_IP:3000/api/status" >/dev/null
             READY=yes
             trap - EXIT
             echo 'CADDY_IP_HTTPS_CONFIG_APPLIED'
             echo '[ingress] Caddy installed, running, and allowed through active UFW'
             systemctl is-active caddy
-            curl --fail --silent --show-error --max-time 5 "http://$PRIVATE_IPV4:3000/api/status" > /dev/null
-            echo 'PRIVATE_IP_3000_HEALTHY'
+            curl --fail --silent --show-error --connect-timeout 3 --max-time 8 --resolve "$MIRA_IP:3000:$PRIVATE_IPV4" "https://$MIRA_IP:3000/api/status" > /dev/null
+            echo 'PRIVATE_NIC_PORT_3000_TRUSTED_HTTPS_HEALTHY'
             ss -ltnH | grep -E ':(80|443|3000)[[:space:]]' || true
             echo 'ORIGIN_INGRESS_CONFIGURED'
 
@@ -207,6 +209,25 @@ jobs:
           done
           echo 'TRUSTED_PUBLIC_IP_HTTPS_FAILED'
           exit 1
+
+      - name: Verify public HTTPS port 3000 New API and registration protection
+        shell: bash
+        env:
+          MIRA_IP: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          url="https://$MIRA_IP:3000"
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 15 -o /dev/null "$url/api/status"
+          status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 15 "$url/")
+          echo "NEW_API_HTTPS_3000_HOME_HTTP=$status"
+          test "$status" = 200
+          reg=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 15 -X POST "$url/api/user/register")
+          echo "NEW_API_HTTPS_3000_REGISTRATION_HTTP=$reg"
+          test "$reg" = 403
+          plain=$(curl --silent --output /dev/null --write-out '%{http_code}' --connect-timeout 3 --max-time 6 "http://$MIRA_IP:3000/api/status" || true)
+          echo "NEW_API_PLAINTEXT_3000_HTTP=$plain"
+          test "$plain" != 200
+          echo 'TRUSTED_IP_HTTPS_3000_FULL_NEW_API_OK'
 
       - name: Report legacy alias status separately
         shell: bash
