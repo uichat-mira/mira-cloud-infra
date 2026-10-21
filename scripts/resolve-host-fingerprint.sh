@@ -30,7 +30,7 @@ output="$(SSHPASS="$SSH_PASSWORD" sshpass -e ssh -T -F /dev/null \
   -o ConnectionAttempts=1 \
   "${SSH_LOGIN}@${HOST}" \
   'ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256')"
-fingerprint="$(printf '%s\n' "$output" | awk '/\\(ECDSA\\)/ { print $2; exit }')"
+fingerprint="$(printf '%s\n' "$output" | awk '/\(ECDSA\)/ { print $2; exit }')"
 [[ "$fingerprint" == SHA256:* ]] || {
   echo "Could not verify the server ECDSA fingerprint" >&2; exit 1;
 }
