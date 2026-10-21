@@ -165,6 +165,29 @@ jobs:
                 reverse_proxy 127.0.0.1:3000
             }
 
+            # MiraAI canonical community gateway: homepage plus the entire
+            # authenticated New API application and protocol endpoints.
+            # Keep the existing domain and IP sites intact as recovery paths.
+            mira-ai.tomzlab.cn {
+                bind $PRIVATE_IPV4
+                encode gzip
+                @gateway_registration {
+                    method POST
+                    path /api/user/register
+                }
+                @gateway_home {
+                    method GET HEAD
+                    path /
+                }
+                route {
+                    respond @gateway_registration "Public registration disabled" 403
+                    file_server @gateway_home {
+                        root /var/www/mira-gateway/site
+                    }
+                    reverse_proxy 127.0.0.1:3000
+                }
+            }
+
             $MIRA_IP, https://$MIRA_IP:3000 {
                 bind $PRIVATE_IPV4
                 tls {
@@ -262,6 +285,36 @@ jobs:
           echo "NEW_API_PLAINTEXT_3000_HTTP=$plain"
           test "$plain" != 200
           echo 'TRUSTED_IP_HTTPS_3000_FULL_NEW_API_OK'
+
+      - name: Verify MiraAI domain full HTTPS gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          domain="mira-ai.tomzlab.cn"
+          echo "Checking HTTPS for the full community gateway"
+          dns_result=$(getent ahostsv4 "$domain" | awk '{print $1}' | sort -u || true)
+          echo "DNS A answers: ${dns_result:-none}"
+          for i in $(seq 1 18); do
+            status=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 12 "https://$domain/api/status" || true)
+            echo "attempt=$i gateway_https_status=$status"
+            if [ "$status" = 200 ]; then break; fi
+            sleep 10
+          done
+          test "$status" = 200
+          echo 'MIRAAI_DOMAIN_HTTPS_HEALTHY'
+          homepage=$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 "https://$domain/")
+          grep -Fq '让插入' <<< "$homepage"
+          echo 'MIRAAI_DOMAIN_LANDING_OK'
+          login_status=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 "https://$domain/sign-in")
+          echo "MIRAAI_DOMAIN_LOGIN_HTTP=$login_status"
+          test "$login_status" = 200
+          api_status=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 "https://$domain/v1/models")
+          echo "MIRAAI_DOMAIN_V1_UNAUTH_HTTP=$api_status"
+          case "$api_status" in 401|403) ;; *) echo 'Expected model API to require authorization' >&2; exit 1;; esac
+          blocked=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 -X POST "https://$domain/api/user/register")
+          echo "MIRAAI_DOMAIN_REGISTER_HTTP=$blocked"
+          test "$blocked" = 403
+          echo 'MIRAAI_DOMAIN_FULL_GATEWAY_OK'
 
       - name: Report legacy alias status separately
         shell: bash
