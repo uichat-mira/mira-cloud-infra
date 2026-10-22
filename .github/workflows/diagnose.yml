@@ -73,4 +73,83 @@ jobs:
             if command -v curl >/dev/null 2>&1; then
               curl --silent --output /dev/null --max-time 3 --write-out 'HTTP_STATUS=%{http_code}\n' http://127.0.0.1:3000/api/status || true
             fi
+            echo '=== Caddy journal summary, 09:13-09:19 China Standard Time (counts/timestamps only) ==='
+            TZ=UTC python3 - <<'PY'
+            import collections
+            import datetime
+            import json
+            import os
+            import subprocess
+            
+            env = dict(os.environ, TZ="UTC")
+            window = ("2026-10-22 01:13:00", "2026-10-22 01:19:59")
+            args = ["journalctl", "-u", "caddy", "--since=" + window[0],
+                    "--until=" + window[1], "--output=json", "--no-pager"]
+            p = subprocess.run(args, capture_output=True, text=True, env=env, timeout=30)
+            print("TIME_WINDOW_UTC=2026-10-22T01:13:00Z/2026-10-22T01:19:59Z")
+            print("JOURNAL_QUERY_EXIT=" + str(p.returncode))
+            if p.returncode:
+                print("JOURNAL_QUERY_FAILED_NO_RAW_OUTPUT")
+                raise SystemExit(1)
+            events = []
+            for line in p.stdout.splitlines():
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                raw = str(e.get("MESSAGE", ""))
+                try:
+                    app = json.loads(raw)
+                except (ValueError, TypeError):
+                    app = {}
+                if not isinstance(app, dict):
+                    app = {}
+                level = str(app.get("level", "")).lower()
+                logger = str(app.get("logger", "")).lower()
+                message = (logger + " " + str(app.get("msg", "")) + " " + raw[:1200]).lower()
+                priority = str(e.get("PRIORITY", ""))
+                categories = []
+                if any(w in message for w in ["handshake", "tls.", "tls:", "server_name", "no certificate"]):
+                    categories.append("TLS_HANDSHAKE")
+                if any(w in message for w in ["acme", "challenge", "obtaining certificate", "renew", "issuer"]):
+                    categories.append("CERTIFICATE_ACME")
+                if any(w in message for w in ["reverse_proxy", "upstream", "dial tcp", "connection refused"]):
+                    categories.append("UPSTREAM_PROXY")
+                if any(w in message for w in ["reset by peer", "broken pipe", "timeout", "unexpected eof"]):
+                    categories.append("CONNECTION_IO")
+                if level in ("error", "warn", "warning") or priority in ("0", "1", "2", "3", "4"):
+                    categories.append("WARN_OR_ERROR")
+                stamp = ""
+                if e.get("__REALTIME_TIMESTAMP"):
+                    try:
+                        stamp = datetime.datetime.fromtimestamp(
+                            int(e["__REALTIME_TIMESTAMP"]) / 1000000,
+                            tz=datetime.timezone.utc).strftime("%H:%M:%S")
+                    except (TypeError, ValueError, OverflowError):
+                        pass
+                events.append((stamp, categories))
+            print("CADDY_JOURNAL_EVENT_COUNT=" + str(len(events)))
+            counts = collections.Counter(c for _, cs in events for c in set(cs))
+            for name in ("TLS_HANDSHAKE", "CERTIFICATE_ACME", "UPSTREAM_PROXY",
+                         "CONNECTION_IO", "WARN_OR_ERROR"):
+                print("CADDY_" + name + "_COUNT=" + str(counts[name]))
+            relevant = [(t, ",".join(cs)) for t, cs in events if cs]
+            print("RELEVANT_EVENT_TIMES_UTC=" + (";".join(t + "[" + c + "]" for t, c in relevant[:24]) or "NONE"))
+            print("RELEVANT_EVENT_TIMES_TRUNCATED=" + str(max(0, len(relevant) - 24)))
+            # No raw journal messages, client addresses, request paths, or credentials are emitted.
+            last = subprocess.run(
+                ["journalctl", "-u", "caddy", "-n", "1", "--output=json", "--no-pager"],
+                capture_output=True, text=True, env=env, timeout=15)
+            if last.returncode == 0 and last.stdout.strip():
+                try:
+                    e = json.loads(last.stdout.splitlines()[-1])
+                    t = datetime.datetime.fromtimestamp(
+                        int(e["__REALTIME_TIMESTAMP"]) / 1000000,
+                        tz=datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    print("LATEST_CADDY_JOURNAL_ENTRY_UTC=" + t)
+                except (ValueError, KeyError, IndexError):
+                    print("LATEST_CADDY_JOURNAL_ENTRY_UTC=UNKNOWN")
+            else:
+                print("LATEST_CADDY_JOURNAL_ENTRY_UTC=UNAVAILABLE")
+            PY
             echo 'DIAGNOSTIC_COMPLETED=YES'
