@@ -1,0 +1,120 @@
+name: Hermes one-time tool and private gateway smoke
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/hermes-gateway-smoke-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mira-hermes-private-gateway-once
+  cancel-in-progress: false
+
+jobs:
+  test-and-start:
+    name: Check read-only tool use and start private gateway
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read-only host/service and Hermes profile preflight
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 2m
+          script: |
+            set -eu
+            cd /opt/hermes-lab
+            test -s compose.yaml
+            test -s image-id.txt
+            test -s data/.env
+            test -r data/config.yaml
+            docker compose -f compose.yaml config --quiet
+            docker image inspect nousresearch/hermes-agent:stable >/dev/null
+            docker network inspect mira-cloud-infra_default >/dev/null
+            test -z "$(docker ps -a --filter 'name=^/mira-hermes-lab$' --format '{{.Names}}')" || { echo 'HERMES_STANDING_CONTAINER_ALREADY_PRESENT_ABORT'; exit 1; }
+            swap_kib="$(awk 'NR>1 {s+=$3} END {print s+0}' /proc/swaps)"
+            test "$swap_kib" -ge 2000000
+            available_kib="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+            test "$available_kib" -gt 500000 || { echo 'INSUFFICIENT_HOST_MEMORY_HEADROOM'; exit 1; }
+            free_disk_kib="$(df -Pk / | awk 'NR==2 {print $4}')"
+            test "$free_disk_kib" -gt 5242880
+            curl --noproxy '*' -fsS --max-time 6 http://127.0.0.1:3000/api/status >/dev/null
+            curl --noproxy '*' -fsS --max-time 6 http://127.0.0.1:8788/ready >/dev/null
+            echo 'HERMES_PRIVATE_TOOL_TEST_PREFLIGHT_OK'
+
+      - name: Verify real terminal execution using unpredictable canary, then start private gateway
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 6m
+          script: |
+            set -eu
+            cd /opt/hermes-lab
+            test -s data/.env
+            test -r data/config.yaml
+            # Canary is generated on the server, not embedded in the prompt.
+            mkdir -p data/diagnostics
+            chmod 755 data/diagnostics
+            canary_path="/opt/hermes-lab/data/diagnostics/one-time-tool-canary.txt"
+            test ! -e "$canary_path"
+            answer_log="$(mktemp /tmp/hermes-tool-check.XXXXXXXX)"
+            chmod 600 "$answer_log"
+            cleanup() { rm -f "$canary_path" "$answer_log"; }
+            trap cleanup EXIT
+            nonce="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+            printf '%s\n' "$nonce" > "$canary_path"
+            chmod 644 "$canary_path"
+            echo 'HERMES_TOOL_TEST_RUNNING'
+            if timeout 155s docker compose -f compose.yaml run --rm --no-deps hermes chat --toolsets terminal --max-turns 4 --oneshot -q 'Use the terminal tool to execute exactly: cat /opt/data/diagnostics/one-time-tool-canary.txt ; uname -s. Return the exact file contents and OS name. Do not modify files, inspect secrets, run other commands, or access the network.' > "$answer_log" 2>&1; then
+              if grep -Fq "$nonce" "$answer_log" && grep -Fq 'Linux' "$answer_log"; then
+                echo 'HERMES_ACTUAL_TERMINAL_CANARY_AND_UNAME_VERIFIED'
+              else
+                echo 'HERMES_TOOL_CALL_UNVERIFIED_NO_GATEWAY_START'
+                exit 1
+              fi
+            else
+              echo 'HERMES_TOOL_TEST_ERROR_OR_TIMEOUT_NO_GATEWAY_START'
+              exit 1
+            fi
+            # Removing the canary before starting the gateway guarantees no persistent exposure.
+            cleanup
+            trap - EXIT
+            curl --noproxy '*' -fsS --max-time 6 http://127.0.0.1:3000/api/status >/dev/null
+            curl --noproxy '*' -fsS --max-time 6 http://127.0.0.1:8788/ready >/dev/null
+            available_kib="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+            test "$available_kib" -gt 350000 || { echo 'LOW_HEADROOM_AFTER_TOOL_TEST_GATEWAY_NOT_STARTED'; exit 1; }
+            docker compose -f compose.yaml up -d --no-deps --pull never
+            sleep 12
+            running="$(docker inspect -f '{{.State.Running}}' mira-hermes-lab)"
+            oom="$(docker inspect -f '{{.State.OOMKilled}}' mira-hermes-lab)"
+            mem="$(docker inspect -f '{{.HostConfig.Memory}}' mira-hermes-lab)"
+            memswap="$(docker inspect -f '{{.HostConfig.MemorySwap}}' mira-hermes-lab)"
+            restart="$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' mira-hermes-lab)"
+            ports="$(docker inspect -f '{{json .HostConfig.PortBindings}}' mira-hermes-lab)"
+            avail="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+            printf 'HERMES_CONTAINER running=%s oom=%s memory=%s memswap=%s restart=%s published_ports=%s host_available_kib=%s\n' "$running" "$oom" "$mem" "$memswap" "$restart" "$ports" "$avail"
+            if [ "$running" != true ] || [ "$oom" != false ] || [ "$mem" -ne 1073741824 ] || [ "$memswap" -ne 1610612736 ] || [ "$restart" != no ] || [ "$ports" != null ] || [ "$avail" -le 256000 ]; then
+              docker compose -f compose.yaml down
+              echo 'HERMES_GATEWAY_FAIL_SAFE_STOPPED'
+              exit 1
+            fi
+            if ! curl --noproxy '*' -fsS --max-time 6 http://127.0.0.1:3000/api/status >/dev/null || ! curl --noproxy '*' -fsS --max-time 6 http://127.0.0.1:8788/ready >/dev/null; then
+              docker compose -f compose.yaml down
+              echo 'EXISTING_SERVICE_SMOKE_FAILURE_GATEWAY_STOPPED'
+              exit 1
+            fi
+            free -h
+            swapon --show
+            docker stats --no-stream --format 'CONTAINER={{.Name}} MEMORY={{.MemUsage}} CPU={{.CPUPerc}}' mira-hermes-lab
+            echo 'HERMES_PRIVATE_GATEWAY_DEPLOYED_EXISTING_SERVICES_HEALTHY'
