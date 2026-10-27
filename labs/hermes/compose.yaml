@@ -1,0 +1,42 @@
+name: hermes-lab
+
+services:
+  hermes:
+    image: nousresearch/hermes-agent:stable
+    container_name: mira-hermes-lab
+    command: ["gateway", "run"]
+    restart: "no"
+
+    # Official minimum memory/CPU, with 512 MiB additional swap allowance.
+    mem_limit: 1g
+    memswap_limit: 1536m
+    cpus: 1.0
+    pids_limit: 128
+
+    security_opt:
+      - no-new-privileges:true
+
+    # The gateway API/dashboard and all inbound ports stay disabled.
+    environment:
+      API_SERVER_ENABLED: "false"
+      HERMES_DASHBOARD: "0"
+      GATEWAY_ALLOW_ALL_USERS: "false"
+
+    # Hermes persists configuration, profiles, sessions, skills, secrets here.
+    volumes:
+      - ./data:/opt/data
+
+    # Explicit existing NewAPI network, no host-published ports.
+    networks:
+      - newapi
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+networks:
+  newapi:
+    external: true
+    name: mira-cloud-infra_default
