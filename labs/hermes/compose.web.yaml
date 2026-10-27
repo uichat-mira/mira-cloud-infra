@@ -1,0 +1,12 @@
+# Optional, OAuth-protected web-dashboard overlay.
+# Activate only after the Hermes instance has a registered OAuth/OIDC client.
+# HERMES_PUBLIC_ORIGIN is set privately on the server, never inferred from repo vars.
+services:
+  hermes:
+    environment:
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: "0.0.0.0"
+      HERMES_DASHBOARD_PORT: "9119"
+      HERMES_DASHBOARD_PUBLIC_URL: ${HERMES_PUBLIC_ORIGIN:?Set_HERMES_PUBLIC_ORIGIN_to_public_HTTPS_origin}
+    ports:
+      - "127.0.0.1:9119:9119"
