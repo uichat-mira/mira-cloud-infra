@@ -1,0 +1,102 @@
+name: Hermes remove duplicate Caddy login (one-time)
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/hermes-single-login-once.yml
+permissions:
+  contents: read
+concurrency:
+  group: hermes-password-https-rollout
+  cancel-in-progress: false
+jobs:
+  switch:
+    name: Keep Hermes native admin auth, remove Caddy basic_auth
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 7
+    steps:
+      - name: Atomic Caddy-only change with rollback and login verification
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 4m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0
+            site=/etc/caddy/mira-hermes.caddy
+            domain=hermes.tomzlab.cn
+            test -s "$site"
+            test "$(systemctl is-active caddy)" = active
+            test "$(docker inspect -f '{{.State.Running}}' mira-hermes-lab)" = true
+            test "$(curl --noproxy '*' -sS --max-time 6 http://127.0.0.1:9119/api/status | python3 -c 'import json,sys; a=json.load(sys.stdin); assert a.get("auth_required") is True and "basic" in a.get("auth_providers",[]) ; print("HERMES_NATIVE_ADMIN_AUTH_ACTIVE")' | tail -1)" = HERMES_NATIVE_ADMIN_AUTH_ACTIVE
+            addr="$(awk '$1=="bind" {print $2; exit}' "$site")"
+            test -n "$addr"
+            python3 - "$addr" <<'PY'
+            import ipaddress,sys
+            assert ipaddress.ip_address(sys.argv[1]).is_private
+            PY
+            test "$(curl --noproxy '*' -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:9119/api/auth/me)" = 401
+            mkdir -p /opt/hermes-lab/private
+            chmod 700 /opt/hermes-lab/private
+            backup="/opt/hermes-lab/private/caddy-hermes-before-single-login-$(date -u +%Y%m%dT%H%M%SZ).caddy"
+            cp -p "$site" "$backup"
+            ready=no
+            restore() {
+              rc=$?
+              if [ "$ready" != yes ]; then
+                cp -p "$backup" "$site"
+                caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null && systemctl reload caddy || true
+                echo HERMES_SINGLE_LOGIN_ROLLED_BACK
+              fi
+              exit "$rc"
+            }
+            trap restore EXIT
+            python3 - "$site" <<'PY'
+            from pathlib import Path
+            import os,re,sys,tempfile
+            p=Path(sys.argv[1])
+            original=p.read_text()
+            assert len(re.findall(r'(?m)^hermes\.tomzlab\.cn\s*\{',original))==1, 'Unexpected site block'
+            assert 'reverse_proxy 127.0.0.1:9119' in original, 'Unexpected upstream'
+            # Remove only the whole Caddy authentication stanza.
+            new,n=re.subn(r'(?ms)^[ \t]*basic_auth[ \t]*\{[^{}]*\}[ \t]*\n','',original)
+            assert n==1, f'Expected exactly one Caddy basic_auth, found {n}'
+            # Without Caddy basic auth, do not strip upstream bearer Authorization.
+            new,m=re.subn(r'(?m)^([ \t]*)reverse_proxy[ \t]+127\.0\.0\.1:9119[ \t]*\{\n[ \t]*header_up[ \t]+-Authorization[ \t]*\n[ \t]*\}[ \t]*$',r'\1reverse_proxy 127.0.0.1:9119',new)
+            assert m==1, f'Unexpected reverse_proxy header configuration: {m}'
+            assert 'basic_auth' not in new
+            st=p.stat()
+            fd,name=tempfile.mkstemp(prefix='.mira-hermes.',dir=p.parent)
+            try:
+                with os.fdopen(fd,'w') as f: f.write(new)
+                os.chmod(name,st.st_mode & 0o777)
+                os.chown(name,st.st_uid,st.st_gid)
+                os.replace(name,p)
+            finally:
+                if os.path.exists(name): os.unlink(name)
+            print('HERMES_CADDY_BASIC_AUTH_REMOVED')
+            PY
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            systemctl reload caddy
+            test "$(systemctl is-active caddy)" = active
+            root_code="$(curl --noproxy '*' -sS --connect-timeout 4 --max-time 15 --resolve "$domain:443:$addr" -o /dev/null -w '%{http_code}' "https://$domain/")"
+            test "$root_code" = 200 || { echo "HERMES_LOGIN_PAGE_BAD_HTTP=$root_code"; exit 1; }
+            status_json="$(curl --noproxy '*' -fsS --connect-timeout 4 --max-time 15 --resolve "$domain:443:$addr" "https://$domain/api/status")"
+            printf '%s' "$status_json" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d.get("auth_required") is True and "basic" in d.get("auth_providers",[]); print("HERMES_LOGIN_REQUIRED_AND_BASIC_PROVIDER_PRESENT")'
+            me_code="$(curl --noproxy '*' -sS --connect-timeout 4 --max-time 15 --resolve "$domain:443:$addr" -o /dev/null -w '%{http_code}' "https://$domain/api/auth/me")"
+            test "$me_code" = 401 || { echo "HERMES_UNAUTHENTICATED_API_BAD_HTTP=$me_code"; exit 1; }
+            if curl --noproxy '*' -sS --connect-timeout 4 --max-time 15 --resolve "$domain:443:$addr" -D - -o /dev/null "https://$domain/api/auth/me" | grep -qi '^www-authenticate:[[:space:]]*basic'; then
+              echo CADDY_BASIC_AUTH_CHALLENGE_STILL_PRESENT
+              exit 1
+            fi
+            test "$(docker inspect -f '{{.State.OOMKilled}}' mira-hermes-lab)" = false
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:3000/api/status >/dev/null
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8788/ready >/dev/null
+            echo HERMES_SINGLE_LOGIN_NATIVE_ADMIN_ONLY_VERIFIED
+            ready=yes
+            trap - EXIT
