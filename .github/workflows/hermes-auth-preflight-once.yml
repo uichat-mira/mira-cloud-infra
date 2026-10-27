@@ -1,0 +1,76 @@
+name: Hermes public OAuth readiness (read-only once)
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/hermes-auth-preflight-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  hermes-auth-check:
+    name: Inspect HTTPS and OAuth readiness without secrets
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 6
+    steps:
+      - name: Read-only host and OAuth configuration checks
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 2m
+          script: |
+            set -eu
+            test -s /opt/hermes-lab/compose.yaml
+            test -d /opt/hermes-lab/data
+            docker inspect mira-hermes-lab --format 'HERMES_RUNNING={{.State.Running}} OOM={{.State.OOMKilled}}'
+            echo '=== host resources ==='
+            free -h
+            swapon --show
+            echo '=== existing service health ==='
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:3000/api/status >/dev/null
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8788/ready >/dev/null
+            echo 'EXISTING_SERVICES_OK'
+            echo '=== auth provider readiness (booleans only) ==='
+            python3 - <<'PY'
+            from pathlib import Path
+            import re
+            home=Path('/opt/hermes-lab/data')
+            f=home/'.env'
+            c=home/'config.yaml'
+            text=f.read_text() if f.is_file() else ''
+            yaml=c.read_text() if c.is_file() else ''
+            m=re.search(r'(?m)^HERMES_DASHBOARD_OAUTH_CLIENT_ID=[\x22\x27]?([^\x22\x27\r\n]+)', text)
+            env=bool(m and m.group(1).strip().startswith('agent:'))
+            # Config is a source only when a real client id is supplied.
+            cfg=bool(re.search(r'(?m)^\s*client_id:\s*[\x22\x27]?agent:[A-Za-z0-9_-]+',yaml))
+            print('HERMES_NOUS_OAUTH_CLIENT_PRESENT=' + ('YES' if env or cfg else 'NO'))
+            print('HERMES_DATA_ENV_PRESENT=' + ('YES' if f.is_file() else 'NO'))
+            print('HERMES_CONFIG_PRESENT=' + ('YES' if c.is_file() else 'NO'))
+            PY
+            echo '=== Caddy/DNS state ==='
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+            if grep -Fq 'mira-hermes.caddy' /etc/caddy/Caddyfile; then echo 'HERMES_CADDY_IMPORT=YES'; else echo 'HERMES_CADDY_IMPORT=NO'; fi
+            if [ -e /etc/caddy/mira-hermes.caddy ]; then echo 'HERMES_CADDY_SNIPPET=YES'; else echo 'HERMES_CADDY_SNIPPET=NO'; fi
+            python3 - <<'PY'
+            import re
+            from pathlib import Path
+            import socket
+            x=Path('/etc/caddy/Caddyfile').read_text()
+            matches=re.findall(r'(?m)^\s*mira-ai\.([a-z0-9.-]+)\s*\{',x)
+            assert len(set(matches))==1, 'Canonical MiraAI Caddy hostname not unambiguous'
+            name='hermes.'+matches[0]
+            print('HERMES_DNS_NAME='+name)
+            try:
+                answers={a[4][0] for a in socket.getaddrinfo(name,443,family=socket.AF_INET)}
+                print('HERMES_DNS_A_PRESENT='+('YES' if answers else 'NO'))
+            except OSError:
+                print('HERMES_DNS_A_PRESENT=NO')
+            PY
+            echo 'HERMES_PUBLIC_AUTH_PREFLIGHT_COMPLETE'
