@@ -1,0 +1,50 @@
+name: Hermes short-term public HTTPS trial (two password gates)
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/hermes-public-trial-once.yml
+
+permissions:
+  contents: read
+concurrency:
+  group: hermes-password-https-rollout
+  cancel-in-progress: false
+jobs:
+  rollout:
+    name: Start protected Hermes Web and Caddy HTTPS
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST_IP: ${{ secrets.DEPLOY_HOST }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify script syntax
+        run: bash -n labs/hermes/scripts/deploy-public-trial.sh
+      - name: Stage config and audited one-time script
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          source: labs/hermes/compose.web.yaml,labs/hermes/scripts/deploy-public-trial.sh
+          target: /opt/hermes-lab/incoming
+          overwrite: true
+      - name: Deploy and test both password layers
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_HOST_IP: ${{ env.DEPLOY_HOST_IP }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          envs: DEPLOY_HOST_IP
+          command_timeout: 8m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0
+            bash /opt/hermes-lab/incoming/labs/hermes/scripts/deploy-public-trial.sh

@@ -21,6 +21,7 @@ jobs:
           bash scripts/check.sh
           bash scripts/check-hermes-lab.sh
           bash scripts/check-hermes-dashboard.sh
+          bash -n labs/hermes/scripts/deploy-public-trial.sh
 
   mira-gate:
     name: Mira Gate
