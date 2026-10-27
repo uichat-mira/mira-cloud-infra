@@ -11,7 +11,7 @@ services:
       GIN_MODE: release
     volumes:
       - ./data:/data
-    mem_limit: 512m
+    mem_limit: 256m
     mem_reservation: 128m
     logging:
       driver: json-file
