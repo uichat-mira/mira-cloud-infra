@@ -104,7 +104,7 @@ jobs:
             ports="$(docker inspect -f '{{json .HostConfig.PortBindings}}' mira-hermes-lab)"
             avail="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
             printf 'HERMES_CONTAINER running=%s oom=%s memory=%s memswap=%s restart=%s published_ports=%s host_available_kib=%s\n' "$running" "$oom" "$mem" "$memswap" "$restart" "$ports" "$avail"
-            if [ "$running" != true ] || [ "$oom" != false ] || [ "$mem" -ne 1073741824 ] || [ "$memswap" -ne 1610612736 ] || [ "$restart" != no ] || [ "$ports" != null ] || [ "$avail" -le 256000 ]; then
+            if [ "$running" != true ] || [ "$oom" != false ] || [ "$mem" -ne 1073741824 ] || [ "$memswap" -ne 1610612736 ] || [ "$restart" != no ] || { [ "$ports" != null ] && [ "$ports" != "{}" ]; } || [ "$avail" -le 256000 ]; then
               docker compose -f compose.yaml down
               echo 'HERMES_GATEWAY_FAIL_SAFE_STOPPED'
               exit 1
