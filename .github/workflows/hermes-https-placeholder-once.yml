@@ -55,7 +55,7 @@ jobs:
             import re
             from pathlib import Path
             cfg = Path('/etc/caddy/Caddyfile').read_text()
-            matches = re.findall(r'(?m)^\\s*mira-ai\\.([a-z0-9.-]+)\\s*\\{', cfg)
+            matches = re.findall(r'(?m)^\s*mira-ai\.([a-z0-9.-]+)\s*\{', cfg)
             assert len(set(matches)) == 1, 'Unable to establish canonical MiraAI DNS suffix'
             suffix = matches[0]
             assert "." in suffix and all(x for x in suffix.split("."))
