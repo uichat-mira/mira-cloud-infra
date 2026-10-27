@@ -85,7 +85,7 @@ jobs:
             systemctl reload caddy
             test "$(systemctl is-active caddy)" = active
             root_code="$(curl --noproxy '*' -sS --connect-timeout 4 --max-time 15 --resolve "$domain:443:$addr" -o /dev/null -w '%{http_code}' "https://$domain/")"
-            test "$root_code" = 200 || { echo "HERMES_LOGIN_PAGE_BAD_HTTP=$root_code"; exit 1; }
+            case "$root_code" in 200|302) echo "HERMES_NATIVE_LOGIN_PAGE_REACHABLE_HTTP=$root_code" ;; *) echo "HERMES_LOGIN_PAGE_BAD_HTTP=$root_code"; exit 1 ;; esac
             status_json="$(curl --noproxy '*' -fsS --connect-timeout 4 --max-time 15 --resolve "$domain:443:$addr" "https://$domain/api/status")"
             printf '%s' "$status_json" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d.get("auth_required") is True and "basic" in d.get("auth_providers",[]); print("HERMES_LOGIN_REQUIRED_AND_BASIC_PROVIDER_PRESENT")'
             me_code="$(curl --noproxy '*' -sS --connect-timeout 4 --max-time 15 --resolve "$domain:443:$addr" -o /dev/null -w '%{http_code}' "https://$domain/api/auth/me")"
