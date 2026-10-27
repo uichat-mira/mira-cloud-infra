@@ -17,7 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate Compose and shell contracts
-        run: bash scripts/check.sh
+        run: |
+          bash scripts/check.sh
+          bash scripts/check-hermes-lab.sh
 
   mira-gate:
     name: Mira Gate
