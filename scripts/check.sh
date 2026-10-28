@@ -17,7 +17,7 @@ spec = json.loads(subprocess.check_output(
 ))
 assert set(spec["services"]) == {"new-api"}, "v0 should deploy only New API"
 svc = spec["services"]["new-api"]
-assert svc["image"] == "calciumion/new-api:v1.0.0-rc.37", "unexpected/unreviewed image"
+assert svc["image"] == "calciumion/new-api:v1.0.0-rc.47", "unexpected/unreviewed image"
 assert len(svc["ports"]) == 1, "unexpected exposed ports"
 port = svc["ports"][0]
 assert port["host_ip"] == "127.0.0.1", "service must be loopback-only"
