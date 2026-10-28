@@ -1,0 +1,100 @@
+name: One-time Desktop Commander private device pairing
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/dc-pair-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  device-pair:
+    name: Launch isolated DC device and securely return pairing URL
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - name: Launch time-limited low-privilege DC and encrypt device URL
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 3m
+          script: |
+            set -eu
+            umask 077
+            NODE=/opt/mira-dc-poc/v0.3.1/node
+            ENTRY=/opt/mira-dc-poc/v0.3.1/node_modules/@wonderwhy-er/desktop-commander/dist/index.js
+            HOME_DIR=/var/lib/mira-dc-poc
+            LOG="$HOME_DIR/pairing.log"
+            test -x "$NODE"
+            test -r "$ENTRY"
+            id mira-dc-poc >/dev/null
+            test "$(id -Gn mira-dc-poc | tr ' ' '\n' | grep -cx docker || true)" -eq 0
+            command -v openssl >/dev/null
+            test ! -e "$HOME_DIR/.desktop-commander-device/device.json" || { echo 'DEVICE_ALREADY_PAIRED_ABORT'; exit 1; }
+            if systemctl is-active --quiet mira-dc-pairing-poc; then echo 'DC_PAIRING_ALREADY_RUNNING_ABORT'; exit 1; fi
+            available_kib="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+            test "$available_kib" -gt 550000 || { echo 'NOT_ENOUGH_MEMORY_HEADROOM'; exit 1; }
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:3000/api/status >/dev/null
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8788/ready >/dev/null
+            install -m 0600 -o mira-dc-poc -g mira-dc-poc /dev/null "$LOG"
+            systemd-run --quiet --unit=mira-dc-pairing-poc --collect \
+              -p User=mira-dc-poc \
+              -p Group=mira-dc-poc \
+              -p WorkingDirectory="$HOME_DIR" \
+              -p Environment="HOME=$HOME_DIR" \
+              -p MemoryMax=402653184 \
+              -p RuntimeMaxSec=1800 \
+              -p Restart=no \
+              -p StandardOutput="append:$LOG" \
+              -p StandardError="append:$LOG" \
+              "$NODE" "$ENTRY" remote
+            echo 'DC_PAIRING_SERVICE_STARTED=YES'
+            found=0
+            for attempt in $(seq 1 25); do
+              if grep -Eq 'https://mcp\.desktopcommander\.app/[^[:space:]]*user_code=[A-Z0-9-]+' "$LOG"; then
+                found=1
+                break
+              fi
+              if ! systemctl is-active --quiet mira-dc-pairing-poc; then
+                echo 'DC_PAIRING_AGENT_EXITED_BEFORE_CODE=YES'
+                exit 1
+              fi
+              sleep 2
+            done
+            test "$found" -eq 1 || { echo 'DC_PAIRING_URL_NOT_OBTAINED'; exit 1; }
+            pubkey="$(mktemp /tmp/dc-public-key-XXXXXX.pem)"
+            plain="$(mktemp /tmp/dc-code-XXXXXX.txt)"
+            trap 'rm -f "$pubkey" "$plain"' EXIT
+            cat > "$pubkey" <<'PUBLIC_KEY'
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqzUgXwNeIYlhe+gzoeDT
+pDfTHBYXF2eFluOIswg6g2k2VxhZbTaDLK/BHlfhl2ZO06augLhLutSboU6t9t4x
+CBDhHE5wQQ1bSAMa2j+Ux9nncBQVRKz8XJ1MDJGSWpAJcysRmxNixAeQ7NWqsdRd
+HjJNh2DwQnX51kd4mcK3d9o2VdZ/RxA4YGQv4ouLn1IZmushFui7Ykfosp+jZq9H
+eWfG4PvvaCVsI39yiPmIfhU7x+k7sD4zanj0RYssB/HUO/CH1SCs3Zdftnp29Bo1
+Q9SUuItd5u9dJONkq7NWZenfHD2+++Tjkv2mMghYhR7AtDxXUmvSh83NLpns8zAj
+DwIDAQAB
+-----END PUBLIC KEY-----
+PUBLIC_KEY
+            python3 - "$LOG" > "$plain" <<'PY'
+            import pathlib,re,sys
+            s=pathlib.Path(sys.argv[1]).read_text(errors='replace')
+            m=re.search(r'https://mcp\.desktopcommander\.app/[^\s\"\x27]*user_code=[A-Z0-9-]+',s)
+            if not m:
+                sys.exit(1)
+            print(m.group(0))
+            PY
+            echo 'DC_PAIR_URL_OAEP_SHA256_B64_BEGIN'
+            openssl pkeyutl -encrypt -pubin -inkey "$pubkey" \
+              -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 \
+              -in "$plain" | base64 -w 0
+            echo
+            echo 'DC_PAIR_URL_OAEP_SHA256_B64_END'
+            echo 'DC_DEVICE_AUTHORIZATION_REQUIRED=YES'
