@@ -207,7 +207,7 @@ class ApiTests(unittest.TestCase):
 
     def test_frontend_never_invokes_root_operation_directly(self):
         self.call("/dc/api/status")
-        self.assertEqual(self.status_patch.call_args.args[0], "status")
+        self.assertEqual(self.status_mock.call_args.args[0], "status")
         self.assertEqual(self.call("/dc/api/start", method="POST", payload={"cmd": "id"}, origin=dc.ORIGIN)[0], 404)
 
     def test_start_does_not_accept_command_payload(self):
