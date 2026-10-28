@@ -1,0 +1,35 @@
+[Unit]
+Description=Mira DC Control Console (single-owner fixed-action API)
+Documentation=https://github.com/uichat-mira/mira-cloud-infra/tree/dev/labs/dc-control
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/mira-dc-control
+EnvironmentFile=/etc/mira-dc-control.env
+ExecStart=/usr/bin/python3 /opt/mira-dc-control/server.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+UMask=0077
+MemoryMax=67108864
+CPUQuota=25%
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+ReadWritePaths=/var/lib/mira-dc-control
+StateDirectory=mira-dc-control
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target
