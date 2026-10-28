@@ -180,6 +180,31 @@ def get_account(bearer: str) -> dict:
     return account
 
 
+def call_helper(action: str, payload: dict | None = None) -> dict:
+    """Privilege crossing: never run systemctl or access root state in the HTTP process."""
+    if action not in {"status", "start", "stop", "policy"}:
+        raise ControlError(400, "不支持的操作")
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "/usr/bin/python3", "/opt/mira-dc-control/helper.py"],
+            input=json.dumps({"action": action, "payload": payload if payload is not None else {}}),
+            text=True, capture_output=True, check=True, timeout=20,
+        )
+        outcome = json.loads(result.stdout)
+        if not isinstance(outcome, dict):
+            raise ValueError("unexpected helper response")
+        if outcome.get("ok") is True and isinstance(outcome.get("data"), dict):
+            return outcome["data"]
+        code = outcome.get("code")
+        if type(code) is not int or code not in (400, 403, 404, 409, 503):
+            code = 503
+        raise ControlError(code, str(outcome.get("error", "控制操作失败")))
+    except ControlError:
+        raise
+    except (OSError, ValueError, subprocess.SubprocessError):
+        raise ControlError(503, "本机控制服务暂不可用") from None
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MiraDCControl/1.0"
     sys_version = ""
@@ -218,7 +243,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(404, {"error": "not_found"})
             get_account(self.headers.get("Authorization", ""))
             if method == "GET" and p == PREFIX + "/api/status":
-                return self.send_json(200, status())
+                return self.send_json(200, call_helper("status"))
             if method not in ("POST", "PUT") or self.headers.get("Origin") != ORIGIN:
                 raise ControlError(403, "不允许的操作来源")
             size = self.headers.get("Content-Length", "")
@@ -230,14 +255,12 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 raise ControlError(400, "请求格式无效") from None
             if method == "POST" and p == PREFIX + "/api/start" and data == {}:
-                return self.send_json(200, start_session())
+                return self.send_json(200, call_helper("start"))
             if method == "POST" and p == PREFIX + "/api/stop" and data == {}:
-                return self.send_json(200, stop_session())
+                return self.send_json(200, call_helper("stop"))
             if method == "PUT" and p == PREFIX + "/api/policy":
-                with LOCK:
-                    checked = validate_policy(data)
-                    atomic_json("policy.json", checked)
-                return self.send_json(200, status())
+                checked = validate_policy(data)
+                return self.send_json(200, call_helper("policy", checked))
             raise ControlError(404, "不支持的接口")
         except ControlError as error:
             self.send_json(error.code, {"error": str(error)})
