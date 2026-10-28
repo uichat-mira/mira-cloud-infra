@@ -21,30 +21,25 @@ jobs:
     environment: production
     timeout-minutes: 12
     env:
-      MIRA_PUBLIC_DOMAIN: ${{ vars.MIRA_PUBLIC_DOMAIN }}
       DEPLOY_HOST_IP: ${{ secrets.DEPLOY_HOST }}
     steps:
-      - name: Validate hostname derivation (no hardcoded domain)
+      - name: Validate existing deployment IP
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$MIRA_PUBLIC_DOMAIN" =~ ^[a-z0-9-]+([.][a-z0-9-]+)+$ ]]
           [[ "$DEPLOY_HOST_IP" =~ ^([0-9]{1,3}[.]){3}[0-9]{1,3}$ ]]
-          suffix="${MIRA_PUBLIC_DOMAIN#*.}"
-          [[ "$suffix" == *.* ]]
-          echo "Deriving Hermes hostname from configured organization public domain suffix"
+          echo "Deriving Hermes hostname from the live canonical Caddy site"
 
       - name: Preflight and add fail-closed Caddy route
         uses: appleboy/ssh-action@v1
         env:
-          MIRA_PUBLIC_DOMAIN: ${{ env.MIRA_PUBLIC_DOMAIN }}
           DEPLOY_HOST_IP: ${{ env.DEPLOY_HOST_IP }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT || '22' }}
-          envs: MIRA_PUBLIC_DOMAIN,DEPLOY_HOST_IP
+          envs: DEPLOY_HOST_IP
           command_timeout: 7m
           script: |
             set -eu
@@ -56,8 +51,17 @@ jobs:
             test -s /etc/caddy/Caddyfile
             ! grep -Fq 'mira-hermes.caddy' /etc/caddy/Caddyfile
 
-            suffix="${MIRA_PUBLIC_DOMAIN#*.}"
-            domain="hermes.$suffix"
+            domain="$(python3 - <<'PY'
+            import re
+            from pathlib import Path
+            cfg = Path('/etc/caddy/Caddyfile').read_text()
+            matches = re.findall(r'(?m)^\s*mira-ai\.([a-z0-9.-]+)\s*\{', cfg)
+            assert len(set(matches)) == 1, 'Unable to establish canonical MiraAI DNS suffix'
+            suffix = matches[0]
+            assert "." in suffix and all(x for x in suffix.split("."))
+            print("hermes." + suffix)
+            PY
+            )"
             case "$domain" in *[!a-z0-9.-]*|'') echo 'Invalid derived hostname'; exit 1;; esac
             python3 - "$domain" "$DEPLOY_HOST_IP" <<'PY'
             import ipaddress, socket, sys
