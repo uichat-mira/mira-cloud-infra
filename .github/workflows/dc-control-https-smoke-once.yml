@@ -1,0 +1,71 @@
+name: One-time read-only DC control HTTPS acceptance
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/dc-control-https-smoke-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify DC control HTTPS and adjacent routes
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 7
+    steps:
+      - name: Read-only on-host origin, auth and Caddy checks
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 3m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0
+            systemctl is-active --quiet caddy
+            systemctl is-active --quiet mira-dc-control.service
+            test "$(systemctl show -p User --value mira-dc-control.service)" = mira-dc-control
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8788/ready >/dev/null
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:3000/api/status >/dev/null
+            local_status="$(curl --noproxy '*' -sS -o /dev/null --max-time 5 -w '%{http_code}' http://127.0.0.1:8792/dc/)"
+            test "$local_status" = 200
+            anon_status="$(curl --noproxy '*' -sS -o /dev/null --max-time 5 -w '%{http_code}' http://127.0.0.1:8792/dc/api/status)"
+            test "$anon_status" = 401
+            addr="$(python3 - <<'PY'
+            import ipaddress,re
+            from pathlib import Path
+            source=Path("/etc/caddy/mira-cloud-auth.caddy").read_text()
+            match=re.search(r"(?m)^\s*bind\s+(\d+(?:\.\d+){3})\s*$",source)
+            if not match: raise SystemExit("CADDY_BIND_NOT_FOUND")
+            addr=ipaddress.ip_address(match.group(1))
+            if not addr.is_private: raise SystemExit("CADDY_BIND_NOT_PRIVATE")
+            print(addr)
+            PY
+            )"
+            domain=cloud-auth.tomzlab.cn
+            base="https://$domain"
+            response_file="$(mktemp)"
+            trap 'rm -f "$response_file"' EXIT
+            html_status="$(curl --noproxy '*' --proto '=https' --silent --show-error --max-time 8               --resolve "$domain:443:$addr" -o "$response_file" -w '%{http_code}' "$base/dc/")"
+            test "$html_status" = 200
+            grep -Fq 'DC 控制台' "$response_file"
+            anon_https="$(curl --noproxy '*' --proto '=https' --silent --show-error --max-time 8               --resolve "$domain:443:$addr" -o /dev/null -w '%{http_code}' "$base/dc/api/status")"
+            test "$anon_https" = 401
+            health="$(curl --noproxy '*' --proto '=https' -fsS --max-time 8               --resolve "$domain:443:$addr" "$base/health")"
+            test "$health" = '{"status":"ok","service":"mira-cloud-auth"}'
+            route_binding="$(ss -ltnH | awk '$4 ~ /:8792$/ {print $4}')"
+            test "$route_binding" = '127.0.0.1:8792'
+            echo "DC_CONTROL_LOOPBACK_UI=$local_status"
+            echo "DC_CONTROL_LOOPBACK_ANON_API=$anon_status"
+            echo "DC_CONTROL_HTTPS_UI=$html_status"
+            echo "DC_CONTROL_HTTPS_ANON_API=$anon_https"
+            echo "DC_CONTROL_PROD_CADDY_ROUTE_OK=YES"
+            echo "DC_CONTROL_NONROOT_WEB_AND_LOOPBACK_ONLY=YES"
+            echo "CLOUD_AUTH_NEW_API_HEALTHY=YES"
+            test -r /opt/cloud-auth/.deployed-sha
+            echo "CLOUD_AUTH_DEPLOYED_SHA=$(cat /opt/cloud-auth/.deployed-sha)"
