@@ -1,0 +1,56 @@
+name: Remote Device connectivity preflight (read-only once)
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/remote-device-connectivity-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  connectivity:
+    name: Probe hosted Remote MCP from Guangzhou cloud node
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 6
+    steps:
+      - name: Read-only HTTPS and host headroom preflight
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 3m
+          script: |
+            set -eu
+            echo '=== OS and optional runtime (no installs) ==='
+            . /etc/os-release
+            printf 'OS=%s\n' "$PRETTY_NAME"
+            printf 'NODE='
+            if command -v node >/dev/null 2>&1; then node --version; else echo NOT_INSTALLED; fi
+            printf 'NPM='
+            if command -v npm >/dev/null 2>&1; then npm --version; else echo NOT_INSTALLED; fi
+            printf 'MEM_AVAILABLE_KIB='
+            awk '/^MemAvailable:/ {print $2}' /proc/meminfo
+            printf 'DISK_FREE_KIB='
+            df -Pk / | awk 'NR==2 {print $4}'
+            echo '=== Existing services before probe ==='
+            curl --noproxy '*' --silent --output /dev/null --max-time 5 --write-out 'NEW_API_HTTP=%{http_code}\n' http://127.0.0.1:3000/api/status || true
+            curl --noproxy '*' --silent --output /dev/null --max-time 5 --write-out 'CLOUD_AUTH_HTTP=%{http_code}\n' http://127.0.0.1:8788/ready || true
+            echo '=== Direct HTTPS to official Remote MCP public config endpoint ==='
+            if command -v curl >/dev/null 2>&1; then
+              for n in 1 2 3; do
+                printf 'PROBE_%s ' "$n"
+                curl --noproxy '*' --proto '=https' --tlsv1.2 --silent --show-error --output /dev/null --connect-timeout 5 --max-time 15 --write-out 'HTTP=%{http_code} TCP=%{time_connect}s TLS=%{time_appconnect}s TOTAL=%{time_total}s\n' https://mcp.desktopcommander.app/api/mcp-info || echo 'NETWORK_OR_TLS_ERROR'
+              done
+            else
+              echo 'CURL_MISSING'
+            fi
+            echo '=== Existing services after probe ==='
+            curl --noproxy '*' --silent --output /dev/null --max-time 5 --write-out 'NEW_API_HTTP=%{http_code}\n' http://127.0.0.1:3000/api/status || true
+            curl --noproxy '*' --silent --output /dev/null --max-time 5 --write-out 'CLOUD_AUTH_HTTP=%{http_code}\n' http://127.0.0.1:8788/ready || true
+            echo 'READ_ONLY_CONNECTIVITY_PREFLIGHT_COMPLETED'
