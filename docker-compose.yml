@@ -2,7 +2,7 @@ name: mira-cloud-infra
 
 services:
   new-api:
-    image: calciumion/new-api:v1.0.0-rc.37
+    image: calciumion/new-api:v1.0.0-rc.47
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
