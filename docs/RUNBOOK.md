@@ -72,7 +72,7 @@ If a deployment breaks:
 
 ## Known limits
 - Public password-based SSH is an explicit operating tradeoff: enforce strong unique credentials, least privilege in GitHub, network controls and prompt password rotation after suspected exposure.
-- Current pinned image: `calciumion/new-api:v1.0.0-rc.37` from the reference deployment. This is a release-candidate build and **not approved for broader external production use** without reviewing upstream advisories and upgrading in a separate verified task.
+- Current pinned image: `calciumion/new-api:v1.0.0-rc.47` from the reference deployment. This is a release-candidate build and **not approved for broader external production use** without reviewing upstream advisories and upgrading in a separate verified task.
 - `/api/status` verifies that the local gateway responds; it does not prove upstream model API availability.
 - No domain, ICP, public HTTPS, WeChat-group integration, external user onboarding or paid API distribution is provided by this repository yet.
 - Any gateway public exposure, cross-border API access and applicable service-provider/regulatory requirements require a separate approval and verification.
