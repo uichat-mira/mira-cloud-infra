@@ -1,0 +1,97 @@
+name: DC POC isolated runtime preparation (one-time)
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/dc-poc-prepare-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Build on runner and stage on server (do not start DC)
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    environment: production
+    steps:
+      - name: Use pinned Node on GitHub Runner
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+
+      - name: Prepare pinned DC package without postinstall scripts
+        shell: bash
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p .dc-poc-build
+          cd .dc-poc-build
+          printf '%s\n' '{"name":"mira-dc-poc","private":true,"version":"0.0.0"}' > package.json
+          npm install --no-save --ignore-scripts --no-audit --no-fund @wonderwhy-er/desktop-commander@0.3.1
+          node node_modules/@wonderwhy-er/desktop-commander/dist/index.js remote --help > /dev/null
+          cd ..
+          mkdir -p .dc-poc-bundle
+          cp "$(command -v node)" .dc-poc-bundle/node
+          cp -a .dc-poc-build/node_modules .dc-poc-bundle/node_modules
+          chmod 755 .dc-poc-bundle/node
+          test "$(du -sk .dc-poc-bundle | awk '{print $1}')" -lt 750000
+          tar -C .dc-poc-bundle -czf mira-dc-poc-bundle.tar.gz node node_modules
+          test "$(stat -c %s mira-dc-poc-bundle.tar.gz)" -lt 250000000
+          echo "DC_POC_BUNDLE_PREPARED"
+
+      - name: Transfer offline bundle over existing authorized SSH
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          source: mira-dc-poc-bundle.tar.gz
+          target: /tmp
+
+      - name: Install isolated unprivileged runtime without starting it
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 3m
+          script: |
+            set -eu
+            bundle=/tmp/mira-dc-poc-bundle.tar.gz
+            home=/var/lib/mira-dc-poc
+            version_dir=/opt/mira-dc-poc/v0.3.1
+            test -f "$bundle"
+            test ! -e "$version_dir" || { echo 'DC_POC_ALREADY_PRESENT_ABORT'; exit 1; }
+            avail="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+            free_kib="$(df -Pk / | awk 'NR==2 {print $4}')"
+            test "$avail" -gt 650000 || { echo 'DC_POC_INSUFFICIENT_MEMORY_HEADROOM'; exit 1; }
+            test "$free_kib" -gt 6500000 || { echo 'DC_POC_INSUFFICIENT_DISK_HEADROOM'; exit 1; }
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:3000/api/status >/dev/null
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8788/ready >/dev/null
+            if ! getent passwd mira-dc-poc >/dev/null; then
+              useradd --system --create-home --home-dir "$home" --shell /usr/sbin/nologin mira-dc-poc
+            fi
+            test "$(id -Gn mira-dc-poc | tr ' ' '\n' | grep -cx docker || true)" -eq 0 || { echo 'DC_POC_DOCKER_ACCESS_DENIED'; exit 1; }
+            install -d -m 0700 -o mira-dc-poc -g mira-dc-poc "$home"
+            install -d -m 0755 -o root -g root /opt/mira-dc-poc
+            mkdir "$version_dir"
+            trap 'rm -rf "$version_dir"' EXIT
+            tar -xzf "$bundle" -C "$version_dir"
+            chown -R root:root "$version_dir"
+            chmod 755 "$version_dir/node"
+            runuser -u mira-dc-poc -- env HOME="$home" "$version_dir/node" "$version_dir/node_modules/@wonderwhy-er/desktop-commander/dist/index.js" remote --help >/dev/null
+            rm -f "$bundle"
+            trap - EXIT
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:3000/api/status >/dev/null
+            curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8788/ready >/dev/null
+            echo 'DC_POC_READY_FOR_USER_AUTHORIZATION=YES'
+            echo 'DC_POC_REMOTE_AGENT_RUNNING=NO'
+            echo 'DC_POC_SSH_LOGIN_UNCHANGED=YES'
+            echo 'DC_POC_EXISTING_SERVICES_HEALTHY=YES'
