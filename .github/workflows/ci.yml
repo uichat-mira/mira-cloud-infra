@@ -22,6 +22,10 @@ jobs:
           bash scripts/check-hermes-lab.sh
           bash scripts/check-hermes-dashboard.sh
           bash -n labs/hermes/scripts/deploy-public-trial.sh
+          bash -n labs/dc-control/install-prod.sh
+          python3 -m py_compile labs/dc-control/server.py labs/dc-control/helper.py
+          python3 -m unittest discover -s labs/dc-control -p 'test_*.py' -v
+          node --check labs/dc-control/app.js
 
   mira-gate:
     name: Mira Gate
