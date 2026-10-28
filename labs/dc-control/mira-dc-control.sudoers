@@ -1,0 +1,4 @@
+# Allow only this reviewed, root-owned fixed-action DC helper.
+# The HTTP listener runs without root/Docker membership.
+Defaults:mira-dc-control !requiretty
+mira-dc-control ALL=(root) NOPASSWD: /usr/bin/python3 /opt/mira-dc-control/helper.py

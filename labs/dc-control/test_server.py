@@ -140,8 +140,14 @@ class ApiTests(unittest.TestCase):
         self.state_patch.start()
         self.auth_patch = patch.object(dc, "get_account", side_effect=self.fake_auth)
         self.auth_patch.start()
-        self.status_patch = patch.object(dc, "status", return_value={"running": False, "policy": dc.DEFAULT_POLICY, "memoryBytes": None})
-        self.status_patch.start()
+        def fake_helper(action, payload=None):
+            if action == "policy":
+                dc.atomic_json("policy.json", dc.validate_policy(payload))
+            if action not in ("status", "policy"):
+                raise AssertionError("unexpected privileged action")
+            return {"running": False, "policy": dc.policy(), "memoryBytes": None}
+        self.status_patch = patch.object(dc, "call_helper", side_effect=fake_helper)
+        self.status_mock = self.status_patch.start()
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), dc.Handler)
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
@@ -197,6 +203,12 @@ class ApiTests(unittest.TestCase):
         ok, _ = self.call("/dc/api/policy", method="PUT", payload=dict(dc.DEFAULT_POLICY), origin=dc.ORIGIN)
         self.assertEqual(ok, 200)
         self.assertEqual(dc.policy(), dc.DEFAULT_POLICY)
+
+
+    def test_frontend_never_invokes_root_operation_directly(self):
+        self.call("/dc/api/status")
+        self.assertEqual(self.status_mock.call_args.args[0], "status")
+        self.assertEqual(self.call("/dc/api/start", method="POST", payload={"cmd": "id"}, origin=dc.ORIGIN)[0], 404)
 
     def test_start_does_not_accept_command_payload(self):
         self.assertEqual(self.call("/dc/api/start", method="POST", payload={"cmd": "id"}, origin=dc.ORIGIN)[0], 404)
