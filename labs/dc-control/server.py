@@ -48,12 +48,18 @@ def run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[s
 
 def atomic_json(name: str, data: dict) -> None:
     STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    tmp = STATE_DIR / (name + ".tmp")
-    with tmp.open("x", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, STATE_DIR / name)
+    import tempfile
+    fd, temporary = tempfile.mkstemp(prefix=".dc-state-", dir=STATE_DIR)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            os.fchmod(f.fileno(), 0o600)
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, STATE_DIR / name)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def policy() -> dict:
@@ -135,6 +141,12 @@ def start_session() -> dict:
             NODE, ENTRY, "remote",
         ]
         run(args)
+        for _ in range(10):
+            if active(UNIT):
+                break
+            time.sleep(0.15)
+        if not active(UNIT):
+            raise ControlError(503, "DC 启动失败，请查看 systemd 日志")
         atomic_json("session.json", {"deadline": time.time() + p["durationMinutes"] * 60})
         return status()
 
