@@ -73,16 +73,16 @@ jobs:
             plain="$(mktemp /tmp/dc-code-XXXXXX.txt)"
             trap 'rm -f "$pubkey" "$plain"' EXIT
             cat > "$pubkey" <<'PUBLIC_KEY'
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqzUgXwNeIYlhe+gzoeDT
-pDfTHBYXF2eFluOIswg6g2k2VxhZbTaDLK/BHlfhl2ZO06augLhLutSboU6t9t4x
-CBDhHE5wQQ1bSAMa2j+Ux9nncBQVRKz8XJ1MDJGSWpAJcysRmxNixAeQ7NWqsdRd
-HjJNh2DwQnX51kd4mcK3d9o2VdZ/RxA4YGQv4ouLn1IZmushFui7Ykfosp+jZq9H
-eWfG4PvvaCVsI39yiPmIfhU7x+k7sD4zanj0RYssB/HUO/CH1SCs3Zdftnp29Bo1
-Q9SUuItd5u9dJONkq7NWZenfHD2+++Tjkv2mMghYhR7AtDxXUmvSh83NLpns8zAj
-DwIDAQAB
------END PUBLIC KEY-----
-PUBLIC_KEY
+            -----BEGIN PUBLIC KEY-----
+            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqzUgXwNeIYlhe+gzoeDT
+            pDfTHBYXF2eFluOIswg6g2k2VxhZbTaDLK/BHlfhl2ZO06augLhLutSboU6t9t4x
+            CBDhHE5wQQ1bSAMa2j+Ux9nncBQVRKz8XJ1MDJGSWpAJcysRmxNixAeQ7NWqsdRd
+            HjJNh2DwQnX51kd4mcK3d9o2VdZ/RxA4YGQv4ouLn1IZmushFui7Ykfosp+jZq9H
+            eWfG4PvvaCVsI39yiPmIfhU7x+k7sD4zanj0RYssB/HUO/CH1SCs3Zdftnp29Bo1
+            Q9SUuItd5u9dJONkq7NWZenfHD2+++Tjkv2mMghYhR7AtDxXUmvSh83NLpns8zAj
+            DwIDAQAB
+            -----END PUBLIC KEY-----
+            PUBLIC_KEY
             python3 - "$LOG" > "$plain" <<'PY'
             import pathlib,re,sys
             s=pathlib.Path(sys.argv[1]).read_text(errors='replace')
