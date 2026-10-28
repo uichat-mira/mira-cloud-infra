@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7f8f7">
+  <meta name="description" content="Mira Cloud · DC 控制台">
+  <title>DC 控制台 · Mira Cloud</title>
+  <link rel="stylesheet" href="/dc/styles.css">
+  <script defer src="/dc/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="identity"><div class="brand-mark">M</div><div><strong>Mira Cloud</strong><span>设备与服务</span></div></div>
+      <a class="back" href="/account">返回云账号 <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <main class="content">
+      <div class="heading">
+        <div><div class="eyebrow">REMOTE DEVICE · GUANGZHOU</div><h1>DC 控制台</h1><p>管理这台服务器上的 Desktop Commander 远程服务。</p></div>
+        <div class="device-label"><span class="dot" id="header-dot"></span><span id="header-state">正在连接</span></div>
+      </div>
+
+      <div class="message" role="status" aria-live="polite" id="message" hidden></div>
+      <div class="auth-warning" id="auth-warning" hidden>
+        <strong>需要登录 Mira Cloud Account</strong>
+        <p>请在当前标签页登录云账号，然后返回控制台。不需要另设 DC 密码。</p>
+        <a href="/login">前往登录 →</a>
+      </div>
+
+      <div class="layout">
+        <section class="panel status-card" aria-labelledby="status-title">
+          <div class="section-heading"><h2 id="status-title">服务状态</h2><button class="refresh" id="refresh" type="button" aria-label="刷新状态">↻ 刷新</button></div>
+          <div class="big-state"><span class="status-symbol" id="status-symbol"></span><div><div id="status-text" class="state-name">连接中</div><div id="state-explain" class="muted">正在读取 systemd 状态</div></div></div>
+          <div class="state-metrics">
+            <div><span>本次剩余时间</span><b id="remaining">—</b></div>
+            <div><span>进程内存</span><b id="memory">—</b></div>
+            <div><span>节点</span><b>广州 · Ubuntu</b></div>
+          </div>
+          <div class="actions">
+            <button id="start" class="primary" type="button" disabled>启动 DC</button>
+            <button id="stop" class="secondary" type="button" disabled>停止服务</button>
+          </div>
+          <div class="hint" id="status-hint">启停只作用于 DC，不影响 New API、Cloud Auth 或其他容器。</div>
+        </section>
+
+        <section class="panel settings-card" aria-labelledby="policy-title">
+          <div class="section-heading"><h2 id="policy-title">运行策略</h2><span class="subtle">下一次启动时生效</span></div>
+          <fieldset class="field"><legend>单次运行时长</legend><p>到达期限后由 systemd 自动停止。</p><div id="durations" class="chips" role="group" aria-label="单次运行时长"></div></fieldset>
+          <div class="two-fields">
+            <div class="field"><label for="memory-select">内存上限</label><select id="memory-select"><option value="256">256 MiB</option><option value="384">384 MiB</option><option value="512">512 MiB</option></select><span class="help">超出上限时服务可能被终止。</span></div>
+            <div class="field"><label for="cpu-select">CPU 限额</label><select id="cpu-select"><option value="25">25% 单核</option><option value="50">50% 单核</option><option value="100">100% 单核</option></select><span class="help">避免远程任务占满主机。</span></div>
+          </div>
+          <div class="field"><label for="headroom-select">启动前最少可用内存</label><select id="headroom-select"><option value="384">384 MiB</option><option value="512">512 MiB</option><option value="640">640 MiB</option></select></div>
+          <div class="switch-row"><div><strong>到期自动停止</strong><p>强制开启，关掉页面也有效</p></div><span class="enabled">已开启</span></div>
+          <div class="switch-row"><div><strong>自动重启 / 开机启动</strong><p>首版暂不开放，避免无人值守超时运行</p></div><span class="disabled">未启用</span></div>
+          <button id="save" type="button" class="save" disabled>保存策略</button>
+        </section>
+      </div>
+
+      <div class="footnote"><span>管理入口受云账号校验保护；操作仅支持固定的 systemd 启停。</span><span id="last-updated">—</span></div>
+    </main>
+  </div>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog"><h2 id="confirm-title">确认停止 DC？</h2><p>正在进行的远程工具任务会中断。其他 Docker 服务不受影响。</p><div class="dialog-actions"><button value="cancel" class="secondary">取消</button><button value="confirm" class="danger">停止 DC</button></div></form>
+  </dialog>
+</body>
+</html>
