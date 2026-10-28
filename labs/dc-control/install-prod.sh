@@ -95,8 +95,19 @@ systemctl enable --now "$UNIT"
 systemctl restart "$UNIT"
 systemctl is-active --quiet "$UNIT"
 
-STATIC="$(curl --noproxy '*' -sS --max-time 5 -o /tmp/dc-control-index-check -w '%{http_code}' http://127.0.0.1:8792/dc/)"
-[[ "$STATIC" == 200 ]]
+STATIC=000
+for attempt in $(seq 1 25); do
+  STATIC="$(curl --noproxy '*' -s --max-time 3 -o /tmp/dc-control-index-check -w '%{http_code}' http://127.0.0.1:8792/dc/ || true)"
+  if [[ "$STATIC" == 200 ]]; then break; fi
+  if ! systemctl is-active --quiet "$UNIT"; then break; fi
+  sleep 0.5
+done
+if [[ "$STATIC" != 200 ]]; then
+  echo "DC_CONTROL_LOCAL_READY_FAILED_HTTP=$STATIC"
+  systemctl status "$UNIT" --no-pager -n 15 || true
+  journalctl -u "$UNIT" --no-pager -n 15 -o cat || true
+  exit 1
+fi
 grep -q 'DC 控制台' /tmp/dc-control-index-check
 rm -f /tmp/dc-control-index-check
 STATUS="$(curl --noproxy '*' -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8792/dc/api/status)"
