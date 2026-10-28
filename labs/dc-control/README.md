@@ -33,7 +33,7 @@ Only mira-dc-control-session, mira-dc-docker-verify and mira-dc-pairing-poc serv
 ## Security and deployment notes
 - Loopback only. Never expose port 8792 directly or add an unprotected public route.
 - Auth and owner allowlist are mandatory. A valid session belonging to another Cloud Account must be denied.
-- The backend executes fixed systemd calls as an elevated service and is **high risk**. Deployment requires specific authorization, review, backup and rollback. Consider a subsequent non-root HTTP listener plus fixed-command privileged helper.
+- The HTTP listener runs as a dedicated unprivileged mira-dc-control account, without Docker group membership. Its authenticated fixed-action requests pass through a root-owned Python helper via a narrowly-scoped sudoers rule. The helper validates SUDO_UID and accepts only status/start/stop/policy. Service code and sudoers must be root-owned and non-writable by the HTTP account. Deployment still requires explicit review, backup, and rollback.
 - Docker group access is effectively root access. Restrictions on the DC process do not limit what it can cause the external Docker daemon to do.
 - Boot auto-start is disabled and DC has a finite runtime by default.
 - Reject attempts to start if available RAM falls below the chosen threshold; do not reconfigure other Docker services.
