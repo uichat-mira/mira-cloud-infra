@@ -11,7 +11,10 @@ from server import ControlError, atomic_json, policy, start_session, status, sto
 
 def main() -> None:
     try:
-        caller = pwd.getpwnam("mira-dc-control").pw_uid
+        try:
+            caller = pwd.getpwnam("mira-dc-control").pw_uid
+        except KeyError:
+            raise ControlError(403, "不允许的调用来源") from None
         if os.geteuid() != 0 or os.environ.get("SUDO_UID") != str(caller) or len(sys.argv) != 1:
             raise ControlError(403, "不允许的调用来源")
         raw = sys.stdin.buffer.read(2049)
