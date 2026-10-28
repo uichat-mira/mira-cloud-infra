@@ -32,8 +32,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker pull calciumion/new-api:v1.0.0-rc.37
-          docker save calciumion/new-api:v1.0.0-rc.37 | gzip -1 > new-api-image.tar.gz
+          docker pull calciumion/new-api:v1.0.0-rc.47
+          docker save calciumion/new-api:v1.0.0-rc.47 | gzip -1 > new-api-image.tar.gz
           gzip -t new-api-image.tar.gz
 
       - name: Prepare server directory
