@@ -89,6 +89,50 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual([cmd[2] for cmd in ran], [dc.UNIT, *dc.LEGACY_UNITS])
 
 
+class AuthenticationTests(unittest.TestCase):
+    class Response:
+        status = 200
+        def __init__(self, account):
+            self.payload = json.dumps({"account": account, "expiresAt": "2030-01-01T00:00:00Z"}).encode()
+        def read(self, _limit):
+            return self.payload
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            return False
+
+    def test_cloud_auth_verifies_exact_owner_id(self):
+        token = "Bearer mcs_v1." + "A" * 22 + "." + "b" * 43
+        with patch.object(dc, "OWNER_ID", "owner_123"):
+            with patch.object(dc, "urlopen", return_value=self.Response({"id": "owner_123"})) as remote:
+                account = dc.get_account(token)
+                self.assertEqual(account["id"], "owner_123")
+                self.assertEqual(remote.call_args.args[0].full_url, dc.AUTH_URL)
+                self.assertEqual(remote.call_args.args[0].get_header("Authorization"), token)
+            with patch.object(dc, "urlopen", return_value=self.Response({"id": "other_456"})):
+                with self.assertRaises(dc.ControlError) as ctx:
+                    dc.get_account(token)
+                self.assertEqual(ctx.exception.code, 403)
+
+    def test_unconfigured_owner_and_invalid_bearer_fail_closed(self):
+        with patch.object(dc, "OWNER_ID", ""):
+            with self.assertRaises(dc.ControlError) as ctx:
+                dc.get_account("Bearer whatever")
+            self.assertEqual(ctx.exception.code, 503)
+        with patch.object(dc, "OWNER_ID", "owner_123"):
+            with self.assertRaises(dc.ControlError) as ctx:
+                dc.get_account("Bearer invalid")
+            self.assertEqual(ctx.exception.code, 401)
+
+    def test_cloud_auth_network_failure_denies_access(self):
+        token = "Bearer mcs_v1." + "A" * 22 + "." + "b" * 43
+        from urllib.error import URLError
+        with patch.object(dc, "OWNER_ID", "owner_123"), patch.object(dc, "urlopen", side_effect=URLError("offline")):
+            with self.assertRaises(dc.ControlError) as ctx:
+                dc.get_account(token)
+            self.assertEqual(ctx.exception.code, 503)
+
+
 class ApiTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
