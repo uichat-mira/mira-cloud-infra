@@ -1,0 +1,120 @@
+name: Publish tomzlab.cn static site
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/tomzlab-release.yml
+      - scripts/deploy-tomzlab-site.sh
+  workflow_dispatch:
+    inputs:
+      site_sha:
+        description: 'Exact 40-character tomzlab-web prod commit; default is the reviewed first release'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tomzlab-static-site-production
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify, publish, and smoke tomzlab.cn
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      SITE_SHA: ${{ inputs.site_sha || '6a34c9fc69f8456bb01a416fc538a88604ef8745' }}
+    steps:
+      - name: Fetch authorized deployment script
+        uses: actions/checkout@v4
+        with:
+          path: infra
+
+      - name: Fetch exact website commit
+        uses: actions/checkout@v4
+        with:
+          repository: uichat-mira/tomzlab-web
+          ref: ${{ env.SITE_SHA }}
+          fetch-depth: 0
+          path: web
+
+      - name: Verify prod ancestry, public-only files, and site contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SITE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git -C web rev-parse HEAD)" = "$SITE_SHA"
+          git -C web fetch --quiet origin prod
+          git -C web merge-base --is-ancestor "$SITE_SHA" FETCH_HEAD
+          bash -n infra/scripts/deploy-tomzlab-site.sh
+          python3 web/scripts/check_site.py
+          test -z "$(find web/assets -type l -print -quit)"
+          for file in index.html notes.html weekly.html projects.html about.html 404.html robots.txt sitemap.xml assets/css/site.css assets/js/nav.js assets/js/feed-sync.js assets/icons/logo.svg assets/og.png; do
+            test -f "web/$file"
+          done
+          tar -czf "tomzlab-site-${SITE_SHA}.tar.gz" -C web \
+            index.html notes.html weekly.html projects.html about.html 404.html \
+            robots.txt sitemap.xml assets
+          tar -tzf "tomzlab-site-${SITE_SHA}.tar.gz" >/dev/null
+          cp infra/scripts/deploy-tomzlab-site.sh ./deploy-tomzlab-site.sh
+          echo "SITE_CANDIDATE_VERIFIED=$SITE_SHA"
+
+      - name: Confirm existing dedicated Caddy origin (read-only)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 2m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
+            systemctl is-active --quiet caddy
+            test -L /srv/www/tomzlab.cn/current
+            test -f /srv/www/tomzlab.cn/current/index.html
+            grep -RFlq --include='Caddyfile' --include='*.caddy' 'tomzlab.cn' /etc/caddy
+            grep -RFlq --include='Caddyfile' --include='*.caddy' '/srv/www/tomzlab.cn/current' /etc/caddy
+            echo 'TOMZLAB_PREDEPLOY_ORIGIN=PASS'
+
+      - name: Upload only public static release and deployment script
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          source: 'tomzlab-site-*.tar.gz,deploy-tomzlab-site.sh'
+          target: '/tmp'
+          overwrite: true
+
+      - name: Atomic symlink switch, rollback guard, production HTTP smoke
+        uses: appleboy/ssh-action@v1
+        env:
+          SITE_SHA: ${{ env.SITE_SHA }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          envs: SITE_SHA
+          command_timeout: 5m
+          script: |
+            set -eu
+            test -f /tmp/deploy-tomzlab-site.sh
+            bash /tmp/deploy-tomzlab-site.sh "$SITE_SHA"
+            rm -f /tmp/deploy-tomzlab-site.sh
+
+      - name: Optional off-host HTTP observation (not a substitute for origin T5)
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --connect-timeout 5 --max-time 20 "https://tomzlab.cn/weekly.html" | grep -F '见π 周刊' >/dev/null
+          echo 'TOMZLAB_EXTERNAL_HTTP_OBSERVATION=PASS'
