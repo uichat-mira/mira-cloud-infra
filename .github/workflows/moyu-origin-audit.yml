@@ -1,0 +1,54 @@
+name: Audit Moyu 6260381.xyz origin (read-only)
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/moyu-origin-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    steps:
+      - name: Inspect the independent Moyu vhost and static root
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 4m
+          script: |
+            set -eu
+            echo 'MOYU_AUDIT_BEGIN'
+            [ "$(id -u)" -eq 0 ] && echo 'OPERATOR_ROOT=yes' || echo 'OPERATOR_ROOT=no'
+            command -v caddy >/dev/null 2>&1 && echo 'CADDY_PRESENT=yes' || echo 'CADDY_PRESENT=no'
+            if command -v caddy >/dev/null 2>&1; then
+              caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 && echo 'CADDY_VALID=yes' || echo 'CADDY_VALID=no'
+              echo "CADDY_SERVICE=$(systemctl is-active caddy || true)"
+              grep -hE '^[[:space:]]*import[[:space:]]+' /etc/caddy/Caddyfile || true
+            fi
+            if grep -RFlq --include='Caddyfile' --include='*.caddy' '6260381.xyz' /etc/caddy 2>/dev/null; then
+              echo 'MOYU_VHOST_PRESENT=yes'
+            else
+              echo 'MOYU_VHOST_PRESENT=no'
+            fi
+            if [ -d /srv/www/6260381.xyz ] && [ ! -L /srv/www/6260381.xyz ]; then
+              echo 'MOYU_ROOT_DIR_PRESENT=yes'
+            else
+              echo 'MOYU_ROOT_DIR_PRESENT=no'
+            fi
+            if [ -L /srv/www/6260381.xyz/current ]; then
+              echo 'MOYU_CURRENT_SYMLINK=yes'
+            else
+              echo 'MOYU_CURRENT_SYMLINK=no'
+            fi
+            test -f /srv/www/tomzlab.cn/current/index.html && echo 'TOMZLAB_UNTOUCHED=yes' || echo 'TOMZLAB_UNTOUCHED=unknown'
+            echo 'MOYU_AUDIT_END'
