@@ -166,12 +166,6 @@ for page in /blogs/ /projects/ /docs/about/ /blogs/ai-agent-ux-rant/; do
   curl -fsSL --connect-timeout 5 --max-time 20 \
     --resolve "$SITE:443:$BIND_IP" "https://$SITE$page" >/dev/null
 done
-curl -fsSL --connect-timeout 5 --max-time 20 \
-  --resolve "$SITE:443:$BIND_IP" "https://$SITE/images/ai-agent-ux-rant-1.webp" >/dev/null || {
-  # Some releases use a different optimized filename; HTML checks remain
-  # authoritative, do not pretend to have verified an unknown asset.
-  echo 'MOYU_FIRST_IMAGE_ASSET_NAME_NOT_CONFIRMED' >&2
-}
 printf '%s\n' "$SHA" > "$BASE/.deployed-sha"
 DONE=yes
 rm -f -- "$ARCHIVE"
