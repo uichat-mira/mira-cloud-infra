@@ -1,0 +1,146 @@
+name: Publish Moyu static site (6260381.xyz)
+
+on:
+  workflow_dispatch:
+    inputs:
+      site_sha:
+        description: Exact 40-character uichat-mira/moyu prod commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moyu-domestic-production
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, publish, and verify Moyu on the domestic server
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      SITE_SHA: ${{ inputs.site_sha }}
+    steps:
+      - name: Checkout authorized Infra deployment source
+        uses: actions/checkout@v4
+        with:
+          path: infra
+          persist-credentials: false
+
+      - name: Checkout exact Moyu commit
+        uses: actions/checkout@v4
+        with:
+          repository: uichat-mira/moyu
+          ref: ${{ env.SITE_SHA }}
+          fetch-depth: 0
+          path: web
+          persist-credentials: false
+
+      - name: Checkout frozen Folio build input (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: uichat-mira/folio
+          ref: a0d7c88c23b1a9f39b56d016626c2257659b57ae
+          path: folio
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Verify production ancestry, build inputs and deployment script
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SITE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git -C web rev-parse HEAD)" = "$SITE_SHA"
+          git -C web fetch --quiet origin prod
+          git -C web merge-base --is-ancestor "$SITE_SHA" FETCH_HEAD
+          test "$(git -C folio rev-parse HEAD)" = a0d7c88c23b1a9f39b56d016626c2257659b57ae
+          bash -n infra/scripts/deploy-moyu-site.sh
+          test -f web/package-lock.json
+          echo "MOYU_PROD_ANCESTRY=PASS"
+
+      - name: Compile real Moyu static site on the runner
+        shell: bash
+        env:
+          SITE_ORIGIN: https://6260381.xyz
+          VITE_SITE_BASE: /
+        run: |
+          set -euo pipefail
+          npm ci --prefix folio --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/folio-tarball"
+          npm pack --workspace @uichat-mira/folio \
+            --prefix folio --pack-destination "$RUNNER_TEMP/folio-tarball"
+          npm ci --prefix web --no-audit --no-fund
+          tarball="$(find "$RUNNER_TEMP/folio-tarball" -maxdepth 1 -name '*.tgz' -print -quit)"
+          test -n "$tarball"
+          npm install --prefix web --no-save --package-lock=false --no-audit --no-fund "$tarball"
+          npm --prefix web run check
+          for file in index.html 404.html blogs/index.html projects/index.html docs/about/index.html sitemap.xml robots.txt; do
+            test -s "web/dist/$file"
+          done
+          test -z "$(find web/dist -type l -print -quit)"
+          if grep -rFl -- 'https://uichat-mira.github.io/moyu/images/' web/dist/blogs; then
+            echo "::error::Pages-hosted image references found in production build."
+            exit 1
+          fi
+          tar -czf "moyu-site-$SITE_SHA.tar.gz" -C web/dist .
+          tar -tzf "moyu-site-$SITE_SHA.tar.gz" >/dev/null
+          cp infra/scripts/deploy-moyu-site.sh ./deploy-moyu-site.sh
+          echo "MOYU_BUILD_SUCCESS_SHA=$SITE_SHA"
+
+      - name: Save exact build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moyu-prod-${{ env.SITE_SHA }}
+          path: moyu-site-*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload public dist archive and authorized release script
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          source: 'moyu-site-*.tar.gz,deploy-moyu-site.sh'
+          target: '/tmp'
+          overwrite: true
+
+      - name: Configure isolated Caddy vhost, activate release, smoke HTTPS
+        uses: appleboy/ssh-action@v1
+        env:
+          SITE_SHA: ${{ env.SITE_SHA }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          envs: SITE_SHA
+          command_timeout: 9m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0
+            test -f /tmp/deploy-moyu-site.sh
+            bash /tmp/deploy-moyu-site.sh "$SITE_SHA"
+            rm -f /tmp/deploy-moyu-site.sh
+
+      - name: Observe public origin from external runner
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 \
+            --connect-timeout 5 --max-time 20 \
+            --resolve 6260381.xyz:443:${{ secrets.DEPLOY_HOST }} \
+            https://6260381.xyz/ | grep -F '摸鱼划水记录'
+          echo 'MOYU_EXTERNAL_HTTPS_OBSERVATION=PASS'
