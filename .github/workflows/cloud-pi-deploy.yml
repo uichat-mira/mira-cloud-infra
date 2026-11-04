@@ -51,45 +51,63 @@ jobs:
           export CLOUD_PI_SECRETS_FILE=/opt/cloud-pi/secrets/agent.env
           docker compose -f dist/compose.yaml config --quiet
 
-      - name: Preflight private host state and preserve previous manifest
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT || '22' }}
-          command_timeout: 2m
-          script: |
+      - name: Transfer and activate pinned Cloud Pi image with trusted SSH host key
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_PORT" && test -n "$SSHPASS"
+          test -n "$DEPLOY_KNOWN_HOSTS" || { echo "Pinned deploy host key is required"; exit 1; }
+          test "$DEPLOY_USER" = root || { echo "Authorized root deploy user required"; exit 1; }
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/cloud-pi-known-hosts"
+          chmod 600 "$RUNNER_TEMP/cloud-pi-known-hosts"
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq sshpass >/dev/null
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          common=(-o BatchMode=no
+            -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=$RUNNER_TEMP/cloud-pi-known-hosts"
+            -o GlobalKnownHostsFile=/dev/null
+            -o PreferredAuthentications=password
+            -o NumberOfPasswordPrompts=1
+            -o ConnectTimeout=15
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=3)
+          # The same pinned known_hosts applies to BOTH control commands and
+          # the 123-MB transfer; no alternate SSH library can silently bypass it.
+          sshpass -e ssh -p "$DEPLOY_PORT" "${common[@]}" "$remote" '
             set -eu
-            mkdir -p /opt/cloud-pi/dist /opt/cloud-pi/backups /opt/cloud-pi/data
+            test "$(id -u)" -eq 0
             test -s /opt/cloud-pi/secrets/agent.env || {
-              echo "Cloud Pi private configuration not yet provisioned; refusing release"
+              echo "[cloud-pi] missing private runtime configuration"
+              exit 1
+            }
+            install -d -m 0755 /opt/cloud-pi/dist /opt/cloud-pi/backups /opt/cloud-pi/scripts
+            test -d /opt/cloud-pi/data || {
+              echo "[cloud-pi] missing persistent state directory"
               exit 1
             }
             if test -f /opt/cloud-pi/dist/compose.yaml; then
               cp /opt/cloud-pi/dist/compose.yaml "/opt/cloud-pi/backups/compose-before-$(date -u +%Y%m%dT%H%M%SZ).yaml"
             fi
-
-      - name: Transfer verified image and deployment files over Infra SSH
-        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT || '22' }}
-          command_timeout: 20m
-          source: "dist/compose.yaml,dist/version.txt,dist/mira-cloud-pi-linux-amd64.tar.gz,dist/mira-cloud-pi-linux-amd64.tar.gz.sha256,scripts/cloud-pi-deploy.sh"
-          target: "/opt/cloud-pi"
-          overwrite: true
-
-      - name: Activate Cloud Pi only and smoke loopback
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT || '22' }}
-          command_timeout: 12m
-          script: |
+            if test -f /opt/cloud-pi/dist/version.txt; then
+              cp /opt/cloud-pi/dist/version.txt "/opt/cloud-pi/backups/version-before-$(date -u +%Y%m%dT%H%M%SZ).txt"
+            fi
+          '
+          sshpass -e scp -P "$DEPLOY_PORT" "${common[@]}" \
+            dist/compose.yaml dist/version.txt \
+            dist/mira-cloud-pi-linux-amd64.tar.gz \
+            dist/mira-cloud-pi-linux-amd64.tar.gz.sha256 \
+            "$remote:/opt/cloud-pi/dist/"
+          sshpass -e scp -P "$DEPLOY_PORT" "${common[@]}" \
+            scripts/cloud-pi-deploy.sh "$remote:/opt/cloud-pi/scripts/cloud-pi-deploy.sh"
+          sshpass -e ssh -p "$DEPLOY_PORT" "${common[@]}" "$remote" '
             set -eu
             bash /opt/cloud-pi/scripts/cloud-pi-deploy.sh
+          '
