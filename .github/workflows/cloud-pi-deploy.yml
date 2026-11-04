@@ -1,0 +1,95 @@
+name: Deploy Cloud Pi
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - cloud-pi/version.txt
+      - scripts/cloud-pi-deploy.sh
+      - scripts/check-cloud-pi.sh
+      - .github/workflows/cloud-pi-deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mira-cloud-pi-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deliver Cloud Pi image and verify on Mira node
+    if: github.ref == 'refs/heads/prod' && vars.MIRA_CLOUD_PI_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate release contract offline
+        run: bash scripts/check-cloud-pi.sh
+
+      - name: Download and verify pinned Linux/amd64 image on GitHub runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SHA="$(cat cloud-pi/version.txt)"
+          TAG="cloud-pi-$(printf '%s' "$SHA" | cut -c1-12)"
+          BASE="https://github.com/uichat-mira/cloud-pi/releases/download/$TAG"
+          mkdir -p dist
+          curl --proto '=https' --proto-redir '=https' -fLSs --retry 3 --max-time 600 "$BASE/mira-cloud-pi-linux-amd64.tar.gz" \
+            -o dist/mira-cloud-pi-linux-amd64.tar.gz
+          curl --proto '=https' --proto-redir '=https' -fLSs --retry 3 --max-time 60 "$BASE/mira-cloud-pi-linux-amd64.tar.gz.sha256" \
+            -o dist/mira-cloud-pi-linux-amd64.tar.gz.sha256
+          (cd dist && sha256sum -c mira-cloud-pi-linux-amd64.tar.gz.sha256)
+          curl --proto '=https' --proto-redir '=https' -fLSs --retry 3 --max-time 60 \
+            "https://raw.githubusercontent.com/uichat-mira/cloud-pi/$SHA/deploy/compose.yaml" \
+            -o dist/compose.yaml
+          printf '%s\n' "$SHA" > dist/version.txt
+          export CLOUD_PI_IMAGE="mira-cloud-pi:$SHA"
+          export CLOUD_PI_DATA_DIR=/opt/cloud-pi/data
+          export CLOUD_PI_SECRETS_FILE=/opt/cloud-pi/secrets/agent.env
+          docker compose -f dist/compose.yaml config --quiet
+
+      - name: Preflight private host state and preserve previous manifest
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 2m
+          script: |
+            set -eu
+            mkdir -p /opt/cloud-pi/dist /opt/cloud-pi/backups /opt/cloud-pi/data
+            test -s /opt/cloud-pi/secrets/agent.env || {
+              echo "Cloud Pi private configuration not yet provisioned; refusing release"
+              exit 1
+            }
+            if test -f /opt/cloud-pi/dist/compose.yaml; then
+              cp /opt/cloud-pi/dist/compose.yaml "/opt/cloud-pi/backups/compose-before-$(date -u +%Y%m%dT%H%M%SZ).yaml"
+            fi
+
+      - name: Transfer verified image and deployment files over Infra SSH
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 20m
+          source: "dist/compose.yaml,dist/version.txt,dist/mira-cloud-pi-linux-amd64.tar.gz,dist/mira-cloud-pi-linux-amd64.tar.gz.sha256,scripts/cloud-pi-deploy.sh"
+          target: "/opt/cloud-pi"
+          overwrite: true
+
+      - name: Activate Cloud Pi only and smoke loopback
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 12m
+          script: |
+            set -eu
+            bash /opt/cloud-pi/scripts/cloud-pi-deploy.sh
