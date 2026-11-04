@@ -16,7 +16,8 @@ class Tests(unittest.TestCase):
                 "CLOUD_PI_WECOM_BOT_SECRET": "fake-secret-2",
                 "CLOUD_PI_WECOM_BOT_NAME": "测试机器人",
                 "CLOUD_PI_MODEL_API_KEY": "fake-key",
-                "CLOUD_PI_OWNER_ACCOUNT_ID": "account-test"}
+                "CLOUD_PI_OWNER_ACCOUNT_ID": "account-test",
+                "CLOUD_PI_MODEL_ID": "deepseek-v4.1-flash-od"}
     def run_builder(self, env):
         with tempfile.TemporaryDirectory() as root:
             output = Path(root) / "agent.env"
@@ -31,6 +32,17 @@ class Tests(unittest.TestCase):
         self.assertIn("CLOUD_AGENT_CHANNELS=feishu,wecom", data)
         self.assertIn("CLOUD_PI_MODEL_BASE_URL=http://127.0.0.1:3000/v1", data)
         self.assertNotIn("fake-secret", proc.stdout + proc.stderr)
+    def test_refuses_implicit_model_fallback(self):
+        env = self.env()
+        del env["CLOUD_PI_MODEL_ID"]
+        proc, data, _ = self.run_builder(env)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIsNone(data)
+        self.assertIn("CLOUD_PI_MODEL_ID", proc.stderr)
+    def test_preserves_explicit_model_alias(self):
+        proc, data, _ = self.run_builder(self.env())
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("CLOUD_PI_MODEL_ID=deepseek-v4.1-flash-od", data)
     def test_missing_does_not_print_secrets(self):
         env = self.env()
         del env["CLOUD_PI_WECOM_BOT_SECRET"]
