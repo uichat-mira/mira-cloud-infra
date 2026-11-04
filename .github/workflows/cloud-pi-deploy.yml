@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 35
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validate release contract offline
         run: bash scripts/check-cloud-pi.sh
 
@@ -37,12 +37,12 @@ jobs:
           TAG="cloud-pi-$(printf '%s' "$SHA" | cut -c1-12)"
           BASE="https://github.com/uichat-mira/cloud-pi/releases/download/$TAG"
           mkdir -p dist
-          curl -fLSs --retry 3 --max-time 600 "$BASE/mira-cloud-pi-linux-amd64.tar.gz" \
+          curl --proto '=https' --proto-redir '=https' -fLSs --retry 3 --max-time 600 "$BASE/mira-cloud-pi-linux-amd64.tar.gz" \
             -o dist/mira-cloud-pi-linux-amd64.tar.gz
-          curl -fLSs --retry 3 --max-time 60 "$BASE/mira-cloud-pi-linux-amd64.tar.gz.sha256" \
+          curl --proto '=https' --proto-redir '=https' -fLSs --retry 3 --max-time 60 "$BASE/mira-cloud-pi-linux-amd64.tar.gz.sha256" \
             -o dist/mira-cloud-pi-linux-amd64.tar.gz.sha256
           (cd dist && sha256sum -c mira-cloud-pi-linux-amd64.tar.gz.sha256)
-          curl -fLSs --retry 3 --max-time 60 \
+          curl --proto '=https' --proto-redir '=https' -fLSs --retry 3 --max-time 60 \
             "https://raw.githubusercontent.com/uichat-mira/cloud-pi/$SHA/deploy/compose.yaml" \
             -o dist/compose.yaml
           printf '%s\n' "$SHA" > dist/version.txt
@@ -52,7 +52,7 @@ jobs:
           docker compose -f dist/compose.yaml config --quiet
 
       - name: Preflight private host state and preserve previous manifest
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -71,7 +71,7 @@ jobs:
             fi
 
       - name: Transfer verified image and deployment files over Infra SSH
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -83,7 +83,7 @@ jobs:
           overwrite: true
 
       - name: Activate Cloud Pi only and smoke loopback
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
