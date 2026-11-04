@@ -44,11 +44,28 @@ fi
 
 # Do not pass --remove-orphans: an unrelated container must never be deleted.
 docker compose -f dist/compose.yaml up -d --no-build --pull never
+# The owner gateway is a separate authenticated control process. When
+# present in the release Compose it must be live too; otherwise the portal
+# would show a broken control plane while the deployment reported success.
+has_owner_gateway=false
+if docker compose -f dist/compose.yaml config --services | grep -Fxq owner-gateway; then
+  has_owner_gateway=true
+fi
 for _ in $(seq 1 24); do
+  agent_healthy=false
   if curl -fsS -m 3 http://127.0.0.1:8787/v1/health >/dev/null 2>&1; then
+    agent_healthy=true
+  fi
+  owner_healthy=true
+  if "$has_owner_gateway"; then
+    owner_status="$(curl -sS -m 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8793/v1/status 2>/dev/null || true)"
+    # Unauthenticated requests MUST receive 401 before any Cloud Auth lookup.
+    test "$owner_status" = "401" || owner_healthy=false
+  fi
+  if "$agent_healthy" && "$owner_healthy"; then
     docker compose -f dist/compose.yaml ps
     printf '%s\n' "$SHA" > .deployed-cloud-pi-sha
-    echo "[cloud-pi] local API ready (does not prove both IM channels or Guanlan)"
+    echo "[cloud-pi] Agent and declared owner gateway responding (not an IM/Guanlan E2E claim)"
     exit 0
   fi
   sleep 3
