@@ -17,8 +17,8 @@ for text in [
     "environment: production",
     "secrets.DEPLOY_HOST",
     "secrets.DEPLOY_PASSWORD",
-    "appleboy/ssh-action@v1",
-    "appleboy/scp-action@v1",
+    "appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2",
+    "appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345",
     "sha256sum -c",
     "scripts/cloud-pi-deploy.sh",
 ]:
