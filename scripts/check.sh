@@ -52,3 +52,6 @@ assert "DOCKER=NOT_INSTALLED" in diagnose
 assert not Path("scripts/resolve-host-fingerprint.sh").exists()
 print("Mira Appleboy password SSH, unattended diagnose and guarded deploy: OK (static only)")
 PY
+
+# Separate Cloud Pi delivery contract (offline; never contacts production).
+bash scripts/check-cloud-pi.sh
