@@ -23,10 +23,12 @@ CLOUD_PI_WECOM_ALLOWED_USER_IDS, CLOUD_PI_WECOM_ALLOWED_CHAT_IDS.
 A blank Feishu group allowlist permits private chat only. WeCom requires
 an explicit allowlist before owner-delegated external Guanlan tools can run.
 
-Optional GitHub production Environment variable CLOUD_PI_MODEL_ID selects a
-model; initial cost-conscious candidate is deepseek-chat, **unverified until
-a real authorized New API model catalog check**. The actual model must be
-confirmed before a production chat is called ready.
+REQUIRED GitHub production Environment variable CLOUD_PI_MODEL_ID selects the
+model. The initial confirmed selection is deepseek-v4.1-flash-od. On the
+2026-11-04 production node, an authorized New API /v1/models query returned
+HTTP 200 with this model, followed by a real 16-token-max chat completion
+probe (HTTP 200; response usage 49 tokens). This is model-gateway evidence,
+not proof that either IM channel is connected. There is NO implicit fallback.
 
 The already configured DEPLOY_HOST, DEPLOY_USER, DEPLOY_PASSWORD,
 DEPLOY_PORT and DEPLOY_KNOWN_HOSTS from this GitHub Environment are reused.

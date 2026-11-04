@@ -17,12 +17,17 @@ for text in [
     "environment: production",
     "secrets.DEPLOY_HOST",
     "secrets.DEPLOY_PASSWORD",
-    "appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2",
-    "appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345",
+    "secrets.DEPLOY_KNOWN_HOSTS",
+    "StrictHostKeyChecking=yes",
+    "sshpass -e ssh",
+    "sshpass -e scp",
+    "GlobalKnownHostsFile=/dev/null",
     "sha256sum -c",
     "scripts/cloud-pi-deploy.sh",
 ]:
     assert text in w, text
+assert "appleboy/ssh-action" not in w and "appleboy/scp-action" not in w
+assert "StrictHostKeyChecking=no" not in w
 assert "docker build" not in w
 assert "docker compose down -v" not in w
 script = Path("scripts/cloud-pi-deploy.sh").read_text()

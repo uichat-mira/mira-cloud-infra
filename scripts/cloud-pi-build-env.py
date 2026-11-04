@@ -49,7 +49,9 @@ def render(env):
     vals = dict(FIXED)
     vals.update({key: env[source] for key, source in REQUIRED.items()})
     vals.update({key: env[source] for key, source in OPTIONAL.items() if env.get(source, "").strip()})
-    vals["CLOUD_PI_MODEL_ID"] = env.get("CLOUD_PI_MODEL_ID", "").strip() or "deepseek-chat"
+    vals["CLOUD_PI_MODEL_ID"] = env.get("CLOUD_PI_MODEL_ID", "").strip()
+    if not vals["CLOUD_PI_MODEL_ID"]:
+        raise ValueError("CLOUD_PI_MODEL_ID GitHub Environment variable is required")
     if not re.fullmatch(r"cli_[A-Za-z0-9]+", vals["FEISHU_APP_ID"]):
         raise ValueError("CLOUD_PI_FEISHU_APP_ID must be cli_... format")
     if not re.fullmatch(r"[A-Za-z0-9._-]{3,128}", vals["CLOUD_AGENT_OWNER_ACCOUNT_ID"]):
