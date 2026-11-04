@@ -31,3 +31,18 @@ assert "http://127.0.0.1:8793/v1/status" in script
 assert "docker-compose.yml" not in w
 print("Cloud Pi transport contract OK: static only")
 PY
+
+
+# The private provisioning job is manual, prod-only and host-key verified.
+python3 scripts/test_cloud_pi_build_env.py
+python3 - <<'PY'
+from pathlib import Path
+p=Path(".github/workflows/cloud-pi-provision.yml").read_text()
+for required in ["workflow_dispatch:", "refs/heads/prod", "inputs.confirm == 'PROVISION'",
+                 "environment: production", "DEPLOY_KNOWN_HOSTS", "StrictHostKeyChecking=yes",
+                 "sshpass -e ssh", "scripts/cloud-pi-build-env.py"]:
+    assert required in p, required
+assert "StrictHostKeyChecking=no" not in p
+assert "docker compose up" not in p and "docker run" not in p
+print("Cloud Pi private provision contract OK (static only)")
+PY
