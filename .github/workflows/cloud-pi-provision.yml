@@ -1,0 +1,87 @@
+name: Provision Cloud Pi private configuration
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PROVISION. Installs private config but does NOT start the bot."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mira-cloud-pi-private-provision
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: github.ref == 'refs/heads/prod' && inputs.confirm == 'PROVISION'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify private-file builder without credentials
+        run: python3 scripts/test_cloud_pi_build_env.py
+      - name: Assemble bounded private env from protected GitHub secrets
+        env:
+          CLOUD_PI_FEISHU_APP_ID: ${{ secrets.CLOUD_PI_FEISHU_APP_ID }}
+          CLOUD_PI_FEISHU_APP_SECRET: ${{ secrets.CLOUD_PI_FEISHU_APP_SECRET }}
+          CLOUD_PI_WECOM_BOT_ID: ${{ secrets.CLOUD_PI_WECOM_BOT_ID }}
+          CLOUD_PI_WECOM_BOT_SECRET: ${{ secrets.CLOUD_PI_WECOM_BOT_SECRET }}
+          CLOUD_PI_WECOM_BOT_NAME: ${{ secrets.CLOUD_PI_WECOM_BOT_NAME }}
+          CLOUD_PI_MODEL_API_KEY: ${{ secrets.CLOUD_PI_MODEL_API_KEY }}
+          CLOUD_PI_OWNER_ACCOUNT_ID: ${{ secrets.CLOUD_PI_OWNER_ACCOUNT_ID }}
+          CLOUD_PI_FEISHU_ALLOWED_CHAT_IDS: ${{ secrets.CLOUD_PI_FEISHU_ALLOWED_CHAT_IDS }}
+          CLOUD_PI_WECOM_ALLOWED_USER_IDS: ${{ secrets.CLOUD_PI_WECOM_ALLOWED_USER_IDS }}
+          CLOUD_PI_WECOM_ALLOWED_CHAT_IDS: ${{ secrets.CLOUD_PI_WECOM_ALLOWED_CHAT_IDS }}
+          CLOUD_PI_MODEL_ID: ${{ vars.CLOUD_PI_MODEL_ID }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          python3 scripts/cloud-pi-build-env.py "$RUNNER_TEMP/cloud-pi-agent.env"
+      - name: Install private file over SSH with pinned host identity
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test -s "$RUNNER_TEMP/cloud-pi-agent.env"
+          test -n "$DEPLOY_HOST" && test -n "$SSHPASS" && test -n "$DEPLOY_KNOWN_HOSTS"
+          test "$DEPLOY_USER" = root || { echo 'Authorized root deploy user required'; exit 1; }
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/cloud-pi-known-hosts"
+          chmod 600 "$RUNNER_TEMP/cloud-pi-known-hosts"
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq sshpass >/dev/null
+          opts=(-p "$DEPLOY_PORT" -o BatchMode=no -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=$RUNNER_TEMP/cloud-pi-known-hosts"
+            -o GlobalKnownHostsFile=/dev/null -o PreferredAuthentications=password)
+          host="$DEPLOY_USER@$DEPLOY_HOST"
+          sshpass -e ssh "${opts[@]}" "$host" '
+            set -eu
+            test "$(id -u)" -eq 0
+            install -d -m 0700 -o root -g root /opt/cloud-pi/secrets
+            install -d -m 0700 -o 1000 -g 1000 /opt/cloud-pi/data
+          '
+          # Stream, do not include secret bytes in shell arguments or logs.
+          sshpass -e ssh "${opts[@]}" "$host" '
+            set -eu
+            umask 077
+            cat > /opt/cloud-pi/secrets/agent.env.candidate
+          ' < "$RUNNER_TEMP/cloud-pi-agent.env"
+          sshpass -e ssh "${opts[@]}" "$host" '
+            set -eu
+            test -s /opt/cloud-pi/secrets/agent.env.candidate
+            chown root:1000 /opt/cloud-pi/secrets/agent.env.candidate
+            chmod 0640 /opt/cloud-pi/secrets/agent.env.candidate
+            mv -f /opt/cloud-pi/secrets/agent.env.candidate /opt/cloud-pi/secrets/agent.env
+            echo "[cloud-pi] private configuration installed (contents withheld)"
+            echo "[cloud-pi] no runtime was started"
+          '
+          rm -f "$RUNNER_TEMP/cloud-pi-agent.env"
