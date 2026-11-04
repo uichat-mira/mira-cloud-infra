@@ -25,6 +25,9 @@ for text in [
     assert text in w, text
 assert "docker build" not in w
 assert "docker compose down -v" not in w
+script = Path("scripts/cloud-pi-deploy.sh").read_text()
+assert "has_owner_gateway" in script and "owner_status" in script
+assert "http://127.0.0.1:8793/v1/status" in script
 assert "docker-compose.yml" not in w
 print("Cloud Pi transport contract OK: static only")
 PY
