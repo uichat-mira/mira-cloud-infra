@@ -114,9 +114,14 @@ def main() -> None:
                 if mode & stat.S_IXUSR:
                     mode |= 0o010
             os.chmod(item, mode)
-    ensure(os.access(DEST / "node_modules" / "@wonderwhy-er" /
-                     "desktop-commander" / "dist" / "index.js", os.R_OK),
-           "PINNED_AGENT_ENTRY_MISSING")
+    entry = DEST / "node_modules" / "@wonderwhy-er" / "desktop-commander" / "dist" / "index.js"
+    ensure(entry.is_file(), "PINNED_AGENT_ENTRY_MISSING")
+    # Do not mistake root's own read permission for miraops' access.
+    accessible = subprocess.run(
+        ["/usr/sbin/runuser", "-u", USER, "--", "/usr/bin/test", "-r", str(entry)],
+        check=False, capture_output=True, text=True, timeout=10,
+    )
+    ensure(accessible.returncode == 0, "PINNED_AGENT_ENTRY_UNREADABLE_BY_MIRAOPS")
 
     run("loginctl", "enable-linger", USER)
     run("systemctl", "start", f"user@{account.pw_uid}.service")
