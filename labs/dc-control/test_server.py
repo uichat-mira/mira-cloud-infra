@@ -143,7 +143,7 @@ class ApiTests(unittest.TestCase):
         def fake_helper(action, payload=None):
             if action == "policy":
                 dc.atomic_json("policy.json", dc.validate_policy(payload))
-            if action not in ("status", "policy"):
+            if action not in ("status", "policy", "remote_status", "remote_start", "remote_stop", "remote_policy"):
                 raise AssertionError("unexpected privileged action")
             return {"running": False, "policy": dc.policy(), "memoryBytes": None}
         self.status_patch = patch.object(dc, "call_helper", side_effect=fake_helper)
@@ -212,6 +212,25 @@ class ApiTests(unittest.TestCase):
 
     def test_start_does_not_accept_command_payload(self):
         self.assertEqual(self.call("/dc/api/start", method="POST", payload={"cmd": "id"}, origin=dc.ORIGIN)[0], 404)
+
+
+    def test_tencent_endpoint_scoped_and_separate(self):
+        self.assertEqual(self.call("/dc/api/nodes/tencent/status", token="")[0], 401)
+        self.assertEqual(self.call("/dc/api/nodes/evil/status")[0], 404)
+        self.assertEqual(self.call("/dc/api/nodes/tencent/status")[0], 200)
+        self.assertEqual(self.status_mock.call_args.args[0], "remote_status")
+        self.assertEqual(self.call("/dc/api/nodes/tencent/start", method="POST", payload={}, origin="https://evil.invalid")[0], 403)
+        self.assertEqual(self.call("/dc/api/nodes/tencent/start", method="POST", payload={"cmd": "whoami"}, origin=dc.ORIGIN)[0], 404)
+        self.assertEqual(self.call("/dc/api/nodes/tencent/start", method="POST", payload={}, origin=dc.ORIGIN)[0], 200)
+        self.assertEqual(self.status_mock.call_args.args[0], "remote_start")
+        self.assertEqual(self.call("/dc/api/nodes/tencent/stop", method="POST", payload={}, origin=dc.ORIGIN)[0], 200)
+        self.assertEqual(self.status_mock.call_args.args[0], "remote_stop")
+        self.assertEqual(self.call("/dc/api/nodes/tencent/policy", method="PUT", payload={"durationMinutes": 999}, origin=dc.ORIGIN)[0], 400)
+        self.assertEqual(self.call("/dc/api/nodes/tencent/policy", method="PUT", payload=dict(dc.DEFAULT_POLICY), origin=dc.ORIGIN)[0], 200)
+        self.assertEqual(self.status_mock.call_args.args[0], "remote_policy")
+        # The original path remains locally routed after Tencent operations.
+        self.assertEqual(self.call("/dc/api/status")[0], 200)
+        self.assertEqual(self.status_mock.call_args.args[0], "status")
 
 if __name__ == "__main__":
     unittest.main()
