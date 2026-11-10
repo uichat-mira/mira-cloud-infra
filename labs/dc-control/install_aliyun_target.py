@@ -24,6 +24,19 @@ def ensure(condition: bool, error: str) -> None:
         raise SystemExit(error)
 
 
+def require_secure_root_file(path: Path) -> None:
+    ensure(path.is_absolute(), "ABSOLUTE_VERIFIED_HOSTKEY_PATH_REQUIRED")
+    for item in (path, *path.parents):
+        try:
+            info = item.lstat()
+        except OSError:
+            raise SystemExit("VERIFIED_HOSTKEY_PATH_MISSING") from None
+        ensure(info.st_uid == 0 and not (info.st_mode & 0o022),
+               "VERIFIED_HOSTKEY_PATH_MUST_BE_ROOT_OWNED")
+        ensure(stat.S_ISREG(info.st_mode) if item == path else stat.S_ISDIR(info.st_mode),
+               "VERIFIED_HOSTKEY_PATH_SYMLINK_OR_WRONG_TYPE")
+
+
 def main() -> None:
     ensure(os.geteuid() == 0, "ROOT_REQUIRED")
     try:
@@ -32,9 +45,7 @@ def main() -> None:
         raise SystemExit("INVALID_TENCENT_TARGET") from None
     # First iteration deliberately uses the existing SSH 22 port.
     verified_path = Path(os.environ.get("MIRA_DC_VERIFIED_HOSTKEY_FILE", ""))
-    ensure(verified_path.is_file() and not verified_path.is_symlink(), "VERIFIED_HOST_KEY_FILE_REQUIRED")
-    info = verified_path.stat()
-    ensure(info.st_uid == 0 and not info.st_mode & 0o022, "VERIFIED_HOST_KEY_FILE_MUST_BE_ROOT_OWNED")
+    require_secure_root_file(verified_path)
     ensure(any(
         line.split()[0] == host for line in verified_path.read_text(encoding="utf-8").splitlines()
         if line and not line.startswith("#") and len(line.split()) >= 3
@@ -61,7 +72,7 @@ def main() -> None:
                         "-f", str(IDENTITY), "-C", "mira-dc-ops027"],
                        check=True, timeout=15, capture_output=True)
     os.chmod(IDENTITY, 0o600)
-    os.chmod(DEST / "id_ed25519.pub", 0o644)
+    os.chmod(DEST / "id_ed25519.pub", 0o600)
     tmp = DEST / ".known_hosts.tmp"
     tmp.write_text(verified_path.read_text(encoding="utf-8"), encoding="utf-8")
     os.chmod(tmp, 0o600)
