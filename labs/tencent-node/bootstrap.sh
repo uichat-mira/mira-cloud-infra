@@ -41,7 +41,6 @@ if test "$operation" = repair; then
 }
 
 http://127.0.0.1:8090 {
-    bind 127.0.0.1
     respond /healthz "ok" 200
     respond "Mira Cloud node ready (local-only)" 200
 }
@@ -127,6 +126,7 @@ cat > /etc/caddy/Caddyfile <<'CADDY'
 }
 
 http://127.0.0.1:8090 {
+    bind 127.0.0.1
     respond /healthz "ok" 200
     respond "Mira Cloud node ready (local-only)" 200
 }
