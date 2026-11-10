@@ -182,7 +182,7 @@ def get_account(bearer: str) -> dict:
 
 def call_helper(action: str, payload: dict | None = None) -> dict:
     """Privilege crossing: never run systemctl or access root state in the HTTP process."""
-    if action not in {"status", "start", "stop", "policy"}:
+    if action not in {"status", "start", "stop", "policy", "remote_status", "remote_start", "remote_stop", "remote_policy"}:
         raise ControlError(400, "不支持的操作")
     try:
         result = subprocess.run(
@@ -244,6 +244,8 @@ class Handler(BaseHTTPRequestHandler):
             get_account(self.headers.get("Authorization", ""))
             if method == "GET" and p == PREFIX + "/api/status":
                 return self.send_json(200, call_helper("status"))
+            if method == "GET" and p == PREFIX + "/api/nodes/tencent/status":
+                return self.send_json(200, call_helper("remote_status"))
             if method not in ("POST", "PUT") or self.headers.get("Origin") != ORIGIN:
                 raise ControlError(403, "不允许的操作来源")
             size = self.headers.get("Content-Length", "")
@@ -256,11 +258,18 @@ class Handler(BaseHTTPRequestHandler):
                 raise ControlError(400, "请求格式无效") from None
             if method == "POST" and p == PREFIX + "/api/start" and data == {}:
                 return self.send_json(200, call_helper("start"))
+            if method == "POST" and p == PREFIX + "/api/nodes/tencent/start" and data == {}:
+                return self.send_json(200, call_helper("remote_start"))
             if method == "POST" and p == PREFIX + "/api/stop" and data == {}:
                 return self.send_json(200, call_helper("stop"))
+            if method == "POST" and p == PREFIX + "/api/nodes/tencent/stop" and data == {}:
+                return self.send_json(200, call_helper("remote_stop"))
             if method == "PUT" and p == PREFIX + "/api/policy":
                 checked = validate_policy(data)
                 return self.send_json(200, call_helper("policy", checked))
+            if method == "PUT" and p == PREFIX + "/api/nodes/tencent/policy":
+                checked = validate_policy(data)
+                return self.send_json(200, call_helper("remote_policy", checked))
             raise ControlError(404, "不支持的接口")
         except ControlError as error:
             self.send_json(error.code, {"error": str(error)})
