@@ -114,8 +114,8 @@
       $("header-state").textContent = "请先登录";
       return;
     }
+    const requestedNode = selectedNode;
     try {
-      const requestedNode = selectedNode;
       const previous = current?.policy;
       const result = await api("/status");
       if (requestedNode !== selectedNode) return;
@@ -128,6 +128,7 @@
       if (!quiet) message("");
       render();
     } catch (error) {
+      if (requestedNode !== selectedNode) return;
       current = null;
       $("status-text").textContent = "状态不可用";
       $("state-explain").textContent = "节点可能离线或控制通道尚未配置";
