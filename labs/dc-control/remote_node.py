@@ -39,6 +39,12 @@ def protected(path: Path, *, secret: bool = True) -> None:
 
 
 def target() -> tuple[str, int]:
+    try:
+        info = CONFIG_DIR.lstat()
+    except OSError:
+        raise RemoteError(503, "远程控制未配置") from None
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
+        raise RemoteError(503, "远程控制目录权限不安全")
     protected(CONFIG)
     protected(IDENTITY)
     protected(KNOWN_HOSTS, secret=False)
@@ -101,6 +107,21 @@ def request(action: str, payload: dict) -> dict:
             raise ValueError("invalid status booleans")
         if not isinstance(data.get("policy"), dict):
             raise ValueError("missing policy")
+        policy = data["policy"]
+        allowed = {
+            "durationMinutes": (15, 30, 60, 120, 240),
+            "memoryMiB": (256, 384, 512),
+            "cpuPercent": (25, 50, 100),
+            "minAvailableMiB": (384, 512, 640),
+        }
+        if set(policy) != set(allowed) or any(type(policy[k]) is not int or policy[k] not in vals for k, vals in allowed.items()):
+            raise ValueError("invalid remote policy")
+        for key in ("remainingSeconds", "memoryBytes"):
+            value = data.get(key)
+            if value is not None and (type(value) not in (int, float) or value < 0 or value > 2**60):
+                raise ValueError("invalid remote resource")
+        if not isinstance(data.get("at"), str) or len(data["at"]) > 64:
+            raise ValueError("invalid timestamp")
         # Return only the existing DC status response fields.
         return {
             "running": data["running"],
