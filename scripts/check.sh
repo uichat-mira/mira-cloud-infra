@@ -62,7 +62,9 @@ for workflow in \
   .github/workflows/tencent-dc-node.yml \
   .github/workflows/dc-poc-prepare-once.yml \
   .github/workflows/dc-pair-once.yml \
-  .github/workflows/remote-device-connectivity-once.yml; do
+  .github/workflows/remote-device-connectivity-once.yml \
+  .github/workflows/ops027-ali-audit.yml \
+  .github/workflows/ops027-controller-once.yml; do
   test ! -e "$workflow" || { echo "OBSOLETE_DC_WORKFLOW_PRESENT=$workflow" >&2; exit 1; }
 done
 python3 -m unittest discover -s labs/dc-control -p 'test_*.py'
