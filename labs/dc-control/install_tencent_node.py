@@ -45,6 +45,26 @@ def require_secure_root_path(path: Path) -> None:
                "RELEASE_PATH_SYMLINK_OR_WRONG_TYPE")
 
 
+def make_agent_group_readable(directory: Path, gid: int) -> None:
+    for parent, dirs, files in os.walk(directory):
+        parent_path = Path(parent)
+        os.chown(parent_path, 0, gid)
+        os.chmod(parent_path, (parent_path.stat().st_mode & ~0o022) | 0o050)
+        for name in dirs + files:
+            item = parent_path / name
+            if item.is_symlink():
+                continue
+            mode = item.stat().st_mode & ~0o022
+            os.chown(item, 0, gid)
+            if item.is_dir():
+                mode |= 0o050
+            else:
+                mode |= 0o040
+                if mode & stat.S_IXUSR:
+                    mode |= 0o010
+            os.chmod(item, mode)
+
+
 def main() -> None:
     ensure(os.geteuid() == 0, "ROOT_REQUIRED")
     src = RELEASE / "remote_agent.py"
@@ -97,23 +117,7 @@ def main() -> None:
     # root-only dependency directories, so a non-root DC runner cannot read
     # its fixed entrypoint despite a successful package installation.
     # Give only the dedicated miraops group read/traverse (never write).
-    for parent, dirs, files in os.walk(DEST):
-        parent_path = Path(parent)
-        os.chown(parent_path, 0, account.pw_gid)
-        os.chmod(parent_path, (parent_path.stat().st_mode & ~0o022) | 0o050)
-        for name in dirs + files:
-            item = parent_path / name
-            if item.is_symlink():
-                continue
-            mode = item.stat().st_mode & ~0o022
-            os.chown(item, 0, account.pw_gid)
-            if item.is_dir():
-                mode |= 0o050
-            else:
-                mode |= 0o040
-                if mode & stat.S_IXUSR:
-                    mode |= 0o010
-            os.chmod(item, mode)
+    make_agent_group_readable(DEST, account.pw_gid)
     entry = DEST / "node_modules" / "@wonderwhy-er" / "desktop-commander" / "dist" / "index.js"
     ensure(entry.is_file(), "PINNED_AGENT_ENTRY_MISSING")
     # Do not mistake root's own read permission for miraops' access.
