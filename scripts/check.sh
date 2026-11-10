@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 bash -n scripts/deploy.sh
 bash -n scripts/check.sh
 bash -n scripts/deploy-moyu-site.sh
+bash -n labs/tencent-node/bootstrap.sh
 command -v docker >/dev/null || { echo "docker CLI required" >&2; exit 1; }
 docker compose -f docker-compose.yml config --quiet
 
