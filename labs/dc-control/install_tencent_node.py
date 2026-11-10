@@ -16,7 +16,7 @@ import stat
 import subprocess
 from pathlib import Path
 
-RELEASE = Path(os.environ.get("MIRA_DC_RELEASE_DIR", "/tmp/mira-dc-control-release/labs/dc-control"))
+RELEASE = Path(os.environ.get("MIRA_DC_RELEASE_DIR", "/root/mira-dc-control-release/labs/dc-control"))
 DEST = Path("/opt/mira-dc-remote")
 USER = "miraops"
 
@@ -30,10 +30,25 @@ def run(*args: str) -> str:
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=180).stdout.strip()
 
 
+def require_secure_root_path(path: Path) -> None:
+    # A root-owned source file inside /tmp is not sufficient: a different
+    # user can swap writable ancestor directories before root opens it.
+    ensure(path.is_absolute(), "ABSOLUTE_RELEASE_PATH_REQUIRED")
+    for item in (path, *path.parents):
+        try:
+            info = item.lstat()
+        except OSError:
+            raise SystemExit("RELEASE_PATH_MISSING") from None
+        ensure(info.st_uid == 0 and not (info.st_mode & 0o022),
+               "RELEASE_PATH_MUST_BE_ROOT_OWNED_AND_NOT_WRITABLE_BY_OTHERS")
+        ensure(stat.S_ISREG(info.st_mode) if item == path else stat.S_ISDIR(info.st_mode),
+               "RELEASE_PATH_SYMLINK_OR_WRONG_TYPE")
+
+
 def main() -> None:
     ensure(os.geteuid() == 0, "ROOT_REQUIRED")
     src = RELEASE / "remote_agent.py"
-    ensure(src.is_file() and src.stat().st_uid == 0 and not src.stat().st_mode & 0o022, "REVIEWED_ROOT_OWNED_RELEASE_REQUIRED")
+    require_secure_root_path(src)
     keyfile = Path(os.environ.get("MIRA_DC_CONTROLLER_PUBKEY_FILE", ""))
     ensure(keyfile.is_file() and not keyfile.is_symlink(), "CONTROLLER_PUBLIC_KEY_FILE_REQUIRED")
     try:
