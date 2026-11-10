@@ -34,14 +34,17 @@ class PolicyTests(unittest.TestCase):
                 agent.dispatch({"action": "start", "payload": payload})
 
     def test_wrong_execution_user_rejected(self):
-        with patch.object(agent.os, "geteuid", return_value=-1):
-            with self.assertRaises(agent.ControlError) as ctx:
-                agent.require_user()
-        self.assertEqual(ctx.exception.code, 403)
-        with patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": "bash"}):
-            with patch.object(agent.os, "geteuid", return_value=agent.pwd.getpwnam(agent.USER).pw_uid if agent.USER in (p.pw_name for p in __import__("pwd").getpwall()) else -1):
-                with self.assertRaises(agent.ControlError):
+        from types import SimpleNamespace
+        with patch.object(agent.pwd, "getpwnam", return_value=SimpleNamespace(pw_uid=1234)):
+            with patch.object(agent.os, "geteuid", return_value=-1):
+                with self.assertRaises(agent.ControlError) as ctx:
                     agent.require_user()
+            self.assertEqual(ctx.exception.code, 403)
+            with patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": "bash"}):
+                with patch.object(agent.os, "geteuid", return_value=1234):
+                    with self.assertRaises(agent.ControlError) as ctx:
+                        agent.require_user()
+                self.assertEqual(ctx.exception.code, 403)
 
     def test_atomic_policy_is_bounded(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(agent, "state_dir", return_value=Path(directory)):
