@@ -8,7 +8,7 @@ UNIT=mira-dc-control.service
 umask 077
 
 [[ "$(id -u)" == 0 ]]
-[[ -f "$RELEASE/server.py" && -f "$RELEASE/helper.py" ]]
+[[ -f "$RELEASE/server.py" && -f "$RELEASE/helper.py" && -f "$RELEASE/remote_node.py" ]]
 [[ -f "$RELEASE/mira-dc-control.sudoers" ]]
 [[ -x /opt/mira-dc-poc/v0.3.1/node ]]
 [[ -r /opt/mira-dc-poc/v0.3.1/node_modules/@wonderwhy-er/desktop-commander/dist/index.js ]]
@@ -53,7 +53,7 @@ id -nG mira-dc-poc | tr ' ' '\n' | grep -qx docker
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP="/opt/mira-dc-control-backups/$STAMP"
 install -d -m 0700 -o root -g root "$BACKUP"
-for f in server.py helper.py index.html styles.css app.js README.md; do
+for f in server.py helper.py remote_node.py index.html styles.css app.js README.md; do
   [[ -f "$RELEASE/$f" ]]
   if [[ -f "$TARGET/$f" ]]; then cp -p "$TARGET/$f" "$BACKUP/$f"; fi
 done
@@ -64,10 +64,10 @@ echo "DC_CONTROL_ROLLBACK_BACKUP_READY=YES"
 
 install -d -m 0755 -o root -g root "$TARGET"
 install -d -m 0700 -o root -g root /var/lib/mira-dc-control
-for f in server.py helper.py index.html styles.css app.js README.md; do
+for f in server.py helper.py remote_node.py index.html styles.css app.js README.md; do
   install -m 0644 -o root -g root "$RELEASE/$f" "$TARGET/$f"
 done
-python3 -m py_compile "$TARGET/server.py" "$TARGET/helper.py"
+python3 -m py_compile "$TARGET/server.py" "$TARGET/helper.py" "$TARGET/remote_node.py"
 install -m 0440 -o root -g root "$RELEASE/mira-dc-control.sudoers" /etc/sudoers.d/mira-dc-control
 visudo -cf /etc/sudoers.d/mira-dc-control >/dev/null
 
