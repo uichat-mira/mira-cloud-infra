@@ -10,7 +10,7 @@ python3 - <<'PY'
 from pathlib import Path
 script = Path("labs/tencent-node/bootstrap.sh").read_text(encoding="utf-8")
 def heredoc(name):
-    return script.split("<<'" + name + "'\\n".replace("\\n", "\n"), 1)[1].split("\\n" + name + "\\n".replace("\\n", "\n"), 1)[0]
+    return script.split("<<'" + name + "'\n", 1)[1].split("\n" + name + "\n", 1)[0]
 old = heredoc("OLD_CADDY")
 fixed = heredoc("FIXED_CADDY")
 new = heredoc("CADDY")
