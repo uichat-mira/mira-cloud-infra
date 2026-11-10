@@ -99,17 +99,18 @@ class UserServiceTests(unittest.TestCase):
                 self.assertEqual(ctx.exception.code, 409)
 
     def test_unmanaged_existing_dc_is_never_killed(self):
-        with tempfile.TemporaryDirectory() as td, (
-            patch.object(agent, "state_dir", return_value=Path(td)),
-            patch.object(agent, "active", return_value=False),
-            patch.object(agent, "unmanaged_process", return_value=True),
-        ):
-            with self.assertRaises(agent.ControlError) as ctx:
-                agent.stop()
-            self.assertEqual(ctx.exception.code, 409)
-            with self.assertRaises(agent.ControlError) as ctx:
-                agent.start()
-            self.assertEqual(ctx.exception.code, 409)
+        with tempfile.TemporaryDirectory() as td:
+            with (
+                patch.object(agent, "state_dir", return_value=Path(td)),
+                patch.object(agent, "active", return_value=False),
+                patch.object(agent, "unmanaged_process", return_value=True),
+            ):
+                with self.assertRaises(agent.ControlError) as ctx:
+                    agent.stop()
+                self.assertEqual(ctx.exception.code, 409)
+                with self.assertRaises(agent.ControlError) as ctx:
+                    agent.start()
+                self.assertEqual(ctx.exception.code, 409)
 
     def test_fail_closed_without_user_bus(self):
         with patch.object(agent, "user_env", side_effect=agent.ControlError(503, "no user bus")):
