@@ -10,7 +10,7 @@ die() { echo "MIRA_NODE_BOOTSTRAP_ERROR=$*" >&2; exit 1; }
 test "$(id -u)" = 0 || die "ROOT_REQUIRED"
 test "$( . /etc/os-release; echo "$ID:$VERSION_ID" )" = "ubuntu:26.04" || die "UNEXPECTED_OS"
 operation="${1:-inspect}"
-case "$operation" in inspect|install) ;; *) die "UNKNOWN_OPERATION" ;; esac
+case "$operation" in inspect|install|repair) ;; *) die "UNKNOWN_OPERATION" ;; esac
 
 echo "NODE_HOSTNAME=$(hostname)"
 echo "NODE_DOCKER_PRESENT=$(command -v docker >/dev/null && echo yes || echo no)"
@@ -20,6 +20,65 @@ echo "NODE_DISK_AVAILABLE_KIB=$(df -Pk / | awk 'NR==2 {print $4}')"
 echo "NODE_MEM_AVAILABLE_KIB=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
 if test "$operation" = inspect; then
   echo "NODE_READ_ONLY_INSPECTION=PASS"
+  exit 0
+fi
+
+# Emergency correction for the Caddyfile's implicit wildcard listener.
+# Match the exact v0 bootstrap Caddyfile before touching a running service.
+if test "$operation" = repair; then
+  test -f /etc/caddy/Caddyfile && test ! -L /etc/caddy/Caddyfile ||
+    die "NO_EXPECTED_CADDY_CONFIG"
+  command -v caddy >/dev/null || die "CADDY_NOT_INSTALLED"
+  test -d /opt/mira-cloud-node/backups || die "BACKUP_DIRECTORY_MISSING"
+  umask 077
+  expected="$(mktemp)"
+  replacement="$(mktemp /etc/caddy/.mira-caddy.XXXXXXXX)"
+  trap 'rm -f "$expected" "$replacement"' EXIT
+  cat > "$expected" <<'OLD_CADDY'
+{
+    admin off
+    auto_https off
+}
+
+http://127.0.0.1:8090 {
+    bind 127.0.0.1
+    respond /healthz "ok" 200
+    respond "Mira Cloud node ready (local-only)" 200
+}
+OLD_CADDY
+  cmp -s /etc/caddy/Caddyfile "$expected" || die "CADDY_CONFIG_CHANGED_REVIEW_REQUIRED"
+  cat > "$replacement" <<'FIXED_CADDY'
+{
+    admin off
+    auto_https off
+}
+
+http://127.0.0.1:8090 {
+    bind 127.0.0.1
+    respond /healthz "ok" 200
+    respond "Mira Cloud node ready (local-only)" 200
+}
+FIXED_CADDY
+  caddy validate --config "$replacement" --adapter caddyfile >/dev/null ||
+    die "CADDY_NEW_CONFIG_INVALID"
+  backup="/opt/mira-cloud-node/backups/caddy-pre-bind-$(date -u +%Y%m%dT%H%M%SZ).Caddyfile"
+  cp -p /etc/caddy/Caddyfile "$backup"
+  chmod 600 "$backup"
+  install -o root -g root -m 644 "$replacement" /etc/caddy/Caddyfile
+  if ! systemctl restart caddy.service; then
+    systemctl stop caddy.service || true
+    die "CADDY_RESTART_FAILED_FAIL_CLOSED"
+  fi
+  if ! test "$(curl --noproxy '*' -fsS --max-time 6 http://127.0.0.1:8090/healthz)" = ok ||
+     ! ss -lntH | awk '{print $4}' | grep -qx '127.0.0.1:8090' ||
+     ss -lntH | awk '{print $4}' | grep -Eq '(^[*]:8090$|^0[.]0[.]0[.]0:8090$|^\[::\]:8090$)'; then
+    systemctl stop caddy.service || true
+    die "CADDY_LOCAL_BIND_VERIFICATION_FAILED_FAIL_CLOSED"
+  fi
+  echo "NODE_CADDY_BACKUP_CREATED=YES"
+  echo "NODE_CADDY_LOCAL_BIND=PASS"
+  echo "NODE_CADDY_PUBLIC_LISTENER=NO"
+  echo "NODE_DC_RUNNER_MODIFIED=NO"
   exit 0
 fi
 
@@ -90,8 +149,15 @@ test "$(curl --noproxy '*' -fsS --max-time 6 http://127.0.0.1:8090/healthz)" = o
 if ss -lntH | awk '{print $4}' | grep -Eq ':(80|443|2375|2376)$'; then
   die "UNEXPECTED_PUBLIC_LISTENER"
 fi
-ss -lntH | awk '{print $4}' | grep -Eq '^127[.]0[.]0[.]1:8090$' ||
+ss -lntH | awk '{print $4}' | grep -qx '127.0.0.1:8090' ||
   die "CADDY_NOT_LOCAL_ONLY"
+if ss -lntH | awk '{print $4}' | grep -Eq '(^[*]:8090$|^0[.]0[.]0[.]0:8090$|^\[::\]:8090$)'; then
+  die "CADDY_WILDCARD_LISTENER_FORBIDDEN"
+fi
+echo "NODE_LOOPBACK_LISTENER_VERIFIED=YES"
+test -r /etc/caddy/Caddyfile ||
+  die "CADDY_CONFIG_MISSING"
+# End loopback verification
 if id -nG miraops 2>/dev/null | grep -qw docker; then
   die "MIRAOPS_MUST_NOT_HAVE_DOCKER_ACCESS"
 fi

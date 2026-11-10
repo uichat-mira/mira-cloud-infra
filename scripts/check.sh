@@ -6,6 +6,14 @@ bash -n scripts/deploy.sh
 bash -n scripts/check.sh
 bash -n scripts/deploy-moyu-site.sh
 bash -n labs/tencent-node/bootstrap.sh
+# Caddy site address is a hostname matcher, not a listener binding.
+# Explicit "bind" is mandatory or the health endpoint listens on *:8090.
+grep -Fq '    bind 127.0.0.1' labs/tencent-node/bootstrap.sh || {
+  echo 'TENCENT_CADDY_LOOPBACK_BIND_MISSING' >&2; exit 1;
+}
+grep -Fq 'CADDY_LOCAL_BIND_VERIFICATION_FAILED_FAIL_CLOSED' labs/tencent-node/bootstrap.sh || {
+  echo 'TENCENT_CADDY_LIVE_BIND_CHECK_MISSING' >&2; exit 1;
+}
 command -v docker >/dev/null || { echo "docker CLI required" >&2; exit 1; }
 docker compose -f docker-compose.yml config --quiet
 
