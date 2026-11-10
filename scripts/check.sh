@@ -55,3 +55,22 @@ PY
 
 # Separate Cloud Pi delivery contract (offline; never contacts production).
 bash scripts/check-cloud-pi.sh
+
+# Tencent secrets are routed only to an explicit, production-gated manual DC workflow.
+python3 - <<'PY'
+from pathlib import Path
+text = Path(".github/workflows/tencent-dc-node.yml").read_text()
+assert "workflow_dispatch:" in text
+assert "  push:" not in text, "Tencent deploy must not run on branch pushes"
+assert "github.ref == 'refs/heads/prod'" in text
+assert "environment: production" in text
+for secret in ("TX_DEPLOY_HOST", "TX_DEPLOY_USER", "TX_DEPLOY_PASSWORD"):
+    assert "secrets." + secret in text, f"Missing {secret} binding"
+assert text.count("fingerprint: SHA256:") == 3, "All remote transports need a fixed host fingerprint"
+assert text.count("if: inputs.operation == 'deploy-agent'") == 2
+assert "/opt/mira-dc-remote/remote_agent.py" in text
+assert "sha256sum -c -" in text
+assert "TX_AGENT_SMOKE_FAILED_ROLLED_BACK" in text
+assert "DEPLOY_HOST }}" not in text.replace("TX_DEPLOY_HOST }}", ""), "Aliyun deployment secret leaked into Tencent workflow"
+print("Tencent DC manual production-only workflow contract: OK (static check, no secrets accessed)")
+PY

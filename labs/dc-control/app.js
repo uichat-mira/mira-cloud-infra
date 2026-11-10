@@ -5,6 +5,8 @@
   const apiBase = "/dc/api";
   const storageKey = "mira.cloud-auth.session.v1";
   let current = null, draft = null, busy = false, lastRead = 0;
+  let selectedNode = "aliyun";
+  const selectedEndpoint = (path) => selectedNode === "aliyun" ? path : "/nodes/tencent" + path;
 
   function token() {
     try {
@@ -24,7 +26,7 @@
   async function api(path, method = "GET", data) {
     const bearer = token();
     if (!bearer) throw new Error("请先登录 Mira Cloud Account");
-    const response = await fetch(apiBase + path, {
+    const response = await fetch(apiBase + selectedEndpoint(path), {
       method,
       cache: "no-store",
       credentials: "same-origin",
@@ -81,6 +83,7 @@
     $("stop").disabled = busy || !current || !isRunning();
     $("save").disabled = busy || !current || !isDirty();
     $("refresh").disabled = busy;
+    $("node-select").disabled = busy;
     $("start").textContent = busy ? "正在处理…" : "启动 DC";
     $("stop").textContent = "停止服务";
   }
@@ -88,6 +91,7 @@
     if (!current) return;
     const running = isRunning();
     const legacy = current.legacyRunning && !current.running;
+    $("node-label").textContent = selectedNode === "aliyun" ? "阿里云 · 广州" : "腾讯云 · 广州";
     $("header-dot").classList.toggle("on", running);
     $("header-state").textContent = running ? "在线 · 服务运行中" : "离线 · 已停止";
     $("status-symbol").className = "status-symbol " + (running ? "running" : "stopped");
@@ -110,9 +114,12 @@
       $("header-state").textContent = "请先登录";
       return;
     }
+    const requestedNode = selectedNode;
     try {
       const previous = current?.policy;
-      current = await api("/status");
+      const result = await api("/status");
+      if (requestedNode !== selectedNode) return;
+      current = result;
       lastRead = Date.now();
       if (!draft || !previous || !Object.keys(draft).some(k => draft[k] !== previous[k])) {
         loadPolicy(current.policy);
@@ -121,7 +128,12 @@
       if (!quiet) message("");
       render();
     } catch (error) {
+      if (requestedNode !== selectedNode) return;
       current = null;
+      $("status-text").textContent = "状态不可用";
+      $("state-explain").textContent = "节点可能离线或控制通道尚未配置";
+      $("remaining").textContent = "—";
+      $("memory").textContent = "—";
       updateActions();
       if (!quiet) message(error.message, "error");
       $("header-state").textContent = "无法连接";
@@ -171,6 +183,20 @@
       updateActions();
     });
   }
+  $("node-select").addEventListener("change", () => {
+    if (busy) return;
+    const next = $("node-select").value;
+    if (next !== "aliyun" && next !== "tencent") return;
+    selectedNode = next;
+    current = null;
+    draft = null;
+    lastRead = 0;
+    $("node-label").textContent = next === "aliyun" ? "阿里云 · 广州" : "腾讯云 · 广州";
+    loadPolicy(defaultPolicy);
+    updateActions();
+    message("");
+    void refresh();
+  });
   $("start").addEventListener("click", () => void mutate("start"));
   $("save").addEventListener("click", () => void mutate("save"));
   $("refresh").addEventListener("click", () => void refresh());
