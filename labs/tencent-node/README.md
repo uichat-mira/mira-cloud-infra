@@ -27,3 +27,14 @@ id -nG miraops (must not include docker).
 The source can be rerun in inspect mode without modifying anything.
 Install intentionally refuses an already installed or partially configured
 host rather than blindly replaying a privileged installer.
+
+## Caddy listener correction
+
+The initial v0 Caddyfile used `http://127.0.0.1:8090` without a
+`bind` directive. In Caddy this matched the HTTP host header but actually
+listened on `*:8090`; the original install correctly failed its listener
+check after packages had already been installed. Never rerun `install` in
+that partially provisioned state. The scoped `repair` operation compares the
+exact old Caddyfile, backs it up under restricted root-owned storage, adds
+`bind 127.0.0.1`, restarts Caddy, and fails closed (stops Caddy) if the
+real socket is not loopback-only. Docker and the DC user session are untouched.
