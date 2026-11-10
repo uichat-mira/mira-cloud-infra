@@ -1,0 +1,35 @@
+name: OPS027 once-only Aliyun controller read-only audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 6
+    steps:
+      - name: Inspect existing controller without modifications
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 3m
+          script: |
+            set -eu
+            test "$(id -u)" = 0
+            echo "ALID_ROOT=YES"
+            for f in /etc/mira-dc-remote/id_ed25519 /etc/mira-dc-remote/id_ed25519.pub /etc/mira-dc-remote/known_hosts /etc/mira-dc-remote/target.json /opt/mira-dc-control/remote_node.py /etc/mira-dc-control.env; do
+              if test -f "$f"; then echo "ALID_PRESENT=$(basename "$f")"; else echo "ALID_ABSENT=$(basename "$f")"; fi
+            done
+            for svc in mira-dc-control.service mira-dc-control-session.service; do
+              if systemctl is-active --quiet "$svc"; then echo "ALID_ACTIVE=$svc"; else echo "ALID_INACTIVE=$svc"; fi
+            done
+            for url in http://127.0.0.1:8788/ready http://127.0.0.1:3000/api/status http://127.0.0.1:8792/dc/; do
+              result="$(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" || true)"
+              echo "ALID_HTTP=$result"
+            done
+            echo "ALID_READ_ONLY_DONE=YES"
