@@ -6,6 +6,20 @@ bash -n scripts/deploy.sh
 bash -n scripts/check.sh
 bash -n scripts/deploy-moyu-site.sh
 bash -n labs/tencent-node/bootstrap.sh
+python3 - <<'PY'
+from pathlib import Path
+script = Path("labs/tencent-node/bootstrap.sh").read_text(encoding="utf-8")
+def heredoc(name):
+    return script.split("<<'" + name + "'\n", 1)[1].split("\n" + name + "\n", 1)[0]
+old = heredoc("OLD_CADDY")
+fixed = heredoc("FIXED_CADDY")
+new = heredoc("CADDY")
+assert "bind 127.0.0.1" not in old, "old Caddy template must match installed wildcard config for safe repair"
+assert "bind 127.0.0.1" in fixed, "repair Caddyfile must bind loopback"
+assert "bind 127.0.0.1" in new, "fresh install Caddyfile must bind loopback"
+print("Tencent Caddy old/repair/fresh template contract: OK")
+PY
+
 # Caddy site address is a hostname matcher, not a listener binding.
 # Explicit "bind" is mandatory or the health endpoint listens on *:8090.
 grep -Fq '    bind 127.0.0.1' labs/tencent-node/bootstrap.sh || {
