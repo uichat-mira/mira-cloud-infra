@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Install the fixed-action single-owner DC control API; NO public Caddy route.
-RELEASE=/tmp/mira-dc-control-release/labs/dc-control
+RELEASE=/root/mira-dc-control-release/labs/dc-control
 TARGET=/opt/mira-dc-control
 ENV_FILE=/etc/mira-dc-control.env
 UNIT=mira-dc-control.service
