@@ -159,17 +159,19 @@ def status() -> dict:
     }
 
 
+def available_memory_mib() -> int:
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) // 1024
+    return 0
+
+
 def start() -> dict:
     with locked():
         if active() or unmanaged_process():
             raise ControlError(409, "DC 已在运行；不要同时启动两份实例")
         chosen = policy()
-        available = 0
-        for line in Path("/proc/meminfo").read_text().splitlines():
-            if line.startswith("MemAvailable:"):
-                available = int(line.split()[1]) // 1024
-                break
-        if available < chosen["minAvailableMiB"]:
+        if available_memory_mib() < chosen["minAvailableMiB"]:
             raise ControlError(409, "可用内存不足，拒绝启动")
         if not Path(NODE).is_file() or not Path(ENTRY).is_file():
             raise ControlError(503, "固定版本 DC 尚未安装")
