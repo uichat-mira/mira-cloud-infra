@@ -246,6 +246,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, call_helper("status"))
             if method == "GET" and p == PREFIX + "/api/nodes/tencent/status":
                 return self.send_json(200, call_helper("remote_status"))
+            if method == "GET":
+                raise ControlError(404, "不支持的接口")
             if method not in ("POST", "PUT") or self.headers.get("Origin") != ORIGIN:
                 raise ControlError(403, "不允许的操作来源")
             size = self.headers.get("Content-Length", "")
