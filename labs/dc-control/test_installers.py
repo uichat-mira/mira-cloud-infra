@@ -50,5 +50,54 @@ class BootstrapSourceTests(unittest.TestCase):
                 compile((ROOT / file).read_text(encoding="utf-8"), str(ROOT / file), "exec")
 
 
+
+    def test_prod_installer_requires_explicit_account_owner(self):
+        """Regression for #118: another allowed account must not block the configured owner."""
+        import contextlib
+        import io
+        import sqlite3
+
+        script = (ROOT / "install-prod.sh").read_text(encoding="utf-8")
+        self.assertIn('[[ -n "${MIRA_DC_CONTROL_OWNER_USERNAME:-}" ]]', script)
+        self.assertNotIn("SELECT id FROM accounts WHERE is_allowed=1 AND disabled_at IS NULL", script)
+        self.assertIn("username_normalized=? AND is_allowed=1 AND disabled_at IS NULL", script)
+        self.assertIn("DC_CONTROL_EXPLICIT_OWNER_SELECTED=YES", script)
+        snippet = script.split("OWNER_ID=\"$(python3 - <<'PY'\\n".replace("\\n", "\n"), 1)[1].split("\nPY\n", 1)[0]
+        with tempfile.TemporaryDirectory() as temp:
+            db_path = str(Path(temp) / "accounts.sqlite")
+            original_connect = sqlite3.connect
+            db = original_connect(db_path)
+            db.execute("CREATE TABLE accounts (id TEXT, username_normalized TEXT, is_allowed INTEGER, disabled_at TEXT)")
+            db.executemany("INSERT INTO accounts VALUES (?, ?, ?, ?)", [
+                ("tomz-account", "tomz", 1, None),
+                ("other-account", "other", 1, None),
+                ("blocked-account", "blocked", 0, None),
+                ("disabled-account", "disabled", 1, "2026-01-01"),
+            ])
+            db.commit()
+            db.close()
+
+            def test_connect(*_args, **_kwargs):
+                return original_connect(db_path)
+
+            for username, expected in (("tomz", "tomz-account"), ("OTHER", "other-account")):
+                output = io.StringIO()
+                with patch.dict(os.environ, {"MIRA_DC_CONTROL_OWNER_USERNAME": username}):
+                    with patch("sqlite3.connect", side_effect=test_connect):
+                        with contextlib.redirect_stdout(output):
+                            exec(compile(snippet, "<owner-lookup>", "exec"), {})
+                self.assertEqual(output.getvalue().strip(), expected)
+            for username in ("blocked", "disabled", "missing"):
+                with patch.dict(os.environ, {"MIRA_DC_CONTROL_OWNER_USERNAME": username}):
+                    with patch("sqlite3.connect", side_effect=test_connect):
+                        with self.assertRaises(SystemExit):
+                            exec(compile(snippet, "<owner-lookup>", "exec"), {})
+
+    def test_prod_installer_retries_loopback_readiness(self):
+        script = (ROOT / "install-prod.sh").read_text(encoding="utf-8")
+        self.assertIn("for attempt in $(seq 1 25)", script)
+        self.assertIn("DC_CONTROL_LOCAL_READY_FAILED_HTTP", script)
+        self.assertIn("remote_node.py", script)
+
 if __name__ == "__main__":
     unittest.main()
