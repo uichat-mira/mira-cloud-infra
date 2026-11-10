@@ -105,14 +105,17 @@ jobs:
             test -f "$src" && test ! -L "$src"
             test -f "$dst" && test ! -L "$dst"
             test "$(stat -c %u "$src")" -eq 0
-            # An already successful run of this exact release is safe to retry.
-            # A partial prior run with a backup but no marker is NOT silently overwritten.
+            printf '%s  %s\n' '${{ hashFiles('labs/dc-control/remote_agent.py') }}' "$src" | sha256sum -c -
+            # Only a byte-for-byte matching deployed agent with the correct
+            # release marker is a safe successful retry.
+            # A partial prior attempt with a backup must be reconciled, not
+            # silently clobbered or reported as green.
             if test -f /opt/mira-dc-remote/.deployed-sha &&
-              test "$(cat /opt/mira-dc-remote/.deployed-sha)" = "${{ github.sha }}"; then
+              test "$(cat /opt/mira-dc-remote/.deployed-sha)" = "${{ github.sha }}" &&
+              cmp -s "$src" "$dst"; then
               echo "TX_AGENT_ALREADY_AT_REQUESTED_COMMIT=YES"
               exit 0
             fi
-            printf '%s  %s\n' '${{ hashFiles('labs/dc-control/remote_agent.py') }}' "$src" | sha256sum -c -
             /usr/bin/python3 -m py_compile "$src"
             install -d -m 0700 -o root -g root /root/mira-tx-dc-backups
             backup="/root/mira-tx-dc-backups/remote-agent-${{ github.sha }}.py"
