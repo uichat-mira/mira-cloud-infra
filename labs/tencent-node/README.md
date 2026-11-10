@@ -38,3 +38,27 @@ that partially provisioned state. The scoped `repair` operation compares the
 exact old Caddyfile, backs it up under restricted root-owned storage, adds
 `bind 127.0.0.1`, restarts Caddy, and fails closed (stops Caddy) if the
 real socket is not loopback-only. Docker and the DC user session are untouched.
+
+## Production result (2026-11-11)
+
+- Reviewed branch flow: bootstrap #179 → #180 → #181; Caddy listener
+  correction #182 → #183 → #184; corrected repair guard #185 → #186 → #187.
+- Ubuntu-installed Docker Engine 29.1.3 and Compose v2 2.40.3; official
+  stable Caddy 2.11.9, systemd services active.
+- Initial one-time installer installed packages but detected `*:8090`
+  and returned `CADDY_NOT_LOCAL_ONLY` after deployment. This was a real
+  guard failure, not a healthy T5 deployment.
+- Root-only follow-up repair [Action #42898491515](https://github.com/uichat-mira/mira-cloud-infra/actions/runs/42898491515)
+  backed up the old Caddyfile and bound the existing health endpoint to
+  `127.0.0.1:8090`. An independent non-root DC session verified actual
+  `ss -lntH` listener `127.0.0.1:8090`, `curl /healthz` HTTP 200,
+  active Docker+Caddy, still-active non-root `mira-dc-session.service`,
+  and no Docker-socket access for `miraops`.
+- No containers, application services, public HTTP/HTTPS routes or domain
+  bindings were deployed. Existing DC/session config was not changed.
+- `/opt/mira-cloud-node/BASELINE.txt` does not exist because the first
+  installer stopped before its final audit marker. This is not evidence
+  of a failed Docker/Caddy runtime; keep this explicitly recorded rather
+  than manufacture the missing file or silently rerun the installer.
+- Remove `tencent-node-baseline-once.yml` from all branches after live
+  verification so no reusable privileged root provisioning entry remains.
