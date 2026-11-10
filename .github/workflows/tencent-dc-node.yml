@@ -1,0 +1,136 @@
+name: Tencent DC node (manual verified release)
+
+# Separate from the existing Aliyun DC installer.
+# Never trigger a Tencent deploy on dev/test pushes.
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Verify the Tencent node, or update only its root-owned DC agent"
+        required: true
+        type: choice
+        default: verify
+        options:
+          - verify
+          - deploy-agent
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-027-tencent-dc-production
+  cancel-in-progress: false
+
+jobs:
+  tencent-dc:
+    name: Verify or update the fixed Tencent DC agent
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate exact agent source and safety tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile labs/dc-control/remote_agent.py
+          python3 -m unittest discover -s labs/dc-control -p 'test_*.py' -v
+
+      - name: Check Tencent deployment credentials are provided
+        shell: bash
+        env:
+          TX_DEPLOY_HOST: ${{ secrets.TX_DEPLOY_HOST }}
+          TX_DEPLOY_USER: ${{ secrets.TX_DEPLOY_USER }}
+          TX_DEPLOY_PASSWORD: ${{ secrets.TX_DEPLOY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$TX_DEPLOY_HOST" || { echo "TX_DEPLOY_HOST not configured" >&2; exit 1; }
+          test -n "$TX_DEPLOY_USER" || { echo "TX_DEPLOY_USER not configured" >&2; exit 1; }
+          test -n "$TX_DEPLOY_PASSWORD" || { echo "TX_DEPLOY_PASSWORD not configured" >&2; exit 1; }
+          echo "TX_CREDENTIALS_PRESENT=YES"
+
+      - name: Read-only Tencent runtime preflight
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        with:
+          host: ${{ secrets.TX_DEPLOY_HOST }}
+          username: ${{ secrets.TX_DEPLOY_USER }}
+          password: ${{ secrets.TX_DEPLOY_PASSWORD }}
+          port: '22'
+          # Independently checked from the Tencent console and Aliyun SSH handshake.
+          # This is a public SSH host-key fingerprint, not a password or private key.
+          fingerprint: SHA256:dts8drN74WDQjcE4OsKJ5zozv1oTQ7aLOSeeXLI16HE
+          command_timeout: 2m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0 || { echo "TX_ROOT_DEPLOY_USER_REQUIRED" >&2; exit 1; }
+            test -r /opt/mira-dc-remote/remote_agent.py
+            test -r /home/miraops/.desktop-commander-device/device.json
+            test -f /opt/mira-dc-remote/node_modules/@wonderwhy-er/desktop-commander/dist/index.js
+            /usr/bin/python3 -m py_compile /opt/mira-dc-remote/remote_agent.py
+            printf '%s' '{"action":"status","payload":{}}' |
+              /usr/sbin/runuser -u miraops -- /usr/bin/python3 /opt/mira-dc-remote/remote_agent.py |
+              /usr/bin/python3 -c 'import json,sys; v=json.load(sys.stdin); assert v.get("ok") is True and type(v["data"]["running"]) is bool'
+            echo "TX_DC_NODE_READONLY_SMOKE=PASS"
+
+      - name: Transfer reviewed agent source (does not restart DC)
+        if: inputs.operation == 'deploy-agent'
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
+        with:
+          host: ${{ secrets.TX_DEPLOY_HOST }}
+          username: ${{ secrets.TX_DEPLOY_USER }}
+          password: ${{ secrets.TX_DEPLOY_PASSWORD }}
+          port: '22'
+          fingerprint: SHA256:dts8drN74WDQjcE4OsKJ5zozv1oTQ7aLOSeeXLI16HE
+          source: labs/dc-control/remote_agent.py
+          target: /root/mira-tx-dc-release/${{ github.sha }}
+          overwrite: true
+
+      - name: Atomically update agent, verify, and rollback on smoke failure
+        if: inputs.operation == 'deploy-agent'
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        with:
+          host: ${{ secrets.TX_DEPLOY_HOST }}
+          username: ${{ secrets.TX_DEPLOY_USER }}
+          password: ${{ secrets.TX_DEPLOY_PASSWORD }}
+          port: '22'
+          fingerprint: SHA256:dts8drN74WDQjcE4OsKJ5zozv1oTQ7aLOSeeXLI16HE
+          command_timeout: 3m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0
+            src="/root/mira-tx-dc-release/${{ github.sha }}/labs/dc-control/remote_agent.py"
+            dst="/opt/mira-dc-remote/remote_agent.py"
+            test -f "$src" && test ! -L "$src"
+            test -f "$dst" && test ! -L "$dst"
+            test "$(stat -c %u "$src")" -eq 0
+            printf '%s  %s\n' '${{ hashFiles('labs/dc-control/remote_agent.py') }}' "$src" | sha256sum -c -
+            # Only a byte-for-byte matching deployed agent with the correct
+            # release marker is a safe successful retry.
+            # A partial prior attempt with a backup must be reconciled, not
+            # silently clobbered or reported as green.
+            if test -f /opt/mira-dc-remote/.deployed-sha &&
+              test "$(cat /opt/mira-dc-remote/.deployed-sha)" = "${{ github.sha }}" &&
+              cmp -s "$src" "$dst"; then
+              echo "TX_AGENT_ALREADY_AT_REQUESTED_COMMIT=YES"
+              exit 0
+            fi
+            /usr/bin/python3 -m py_compile "$src"
+            install -d -m 0700 -o root -g root /root/mira-tx-dc-backups
+            backup="/root/mira-tx-dc-backups/remote-agent-${{ github.sha }}.py"
+            test ! -e "$backup" || { echo "BACKUP_ALREADY_EXISTS" >&2; exit 1; }
+            install -m 0600 -o root -g root "$dst" "$backup"
+            staging="/opt/mira-dc-remote/.remote-agent-${{ github.sha }}.py"
+            install -m 0644 -o root -g root "$src" "$staging"
+            mv -f "$staging" "$dst"
+            if ! (printf '%s' '{"action":"status","payload":{}}' |
+              /usr/sbin/runuser -u miraops -- /usr/bin/python3 "$dst" |
+              /usr/bin/python3 -c 'import json,sys; v=json.load(sys.stdin); assert v.get("ok") is True and type(v["data"]["running"]) is bool'); then
+              install -m 0644 -o root -g root "$backup" "$dst"
+              echo "TX_AGENT_SMOKE_FAILED_ROLLED_BACK=YES" >&2
+              exit 1
+            fi
+            printf '%s\n' '${{ github.sha }}' > /opt/mira-dc-remote/.deployed-sha
+            echo "TX_AGENT_DEPLOYED=YES"
+            echo "DC_RUNNING_SESSION_NOT_RESTARTED=YES"
