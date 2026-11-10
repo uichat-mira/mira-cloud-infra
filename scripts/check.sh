@@ -20,6 +20,11 @@ assert "bind 127.0.0.1" in new, "fresh install Caddyfile must bind loopback"
 print("Tencent Caddy old/repair/fresh template contract: OK")
 PY
 
+# Retire one-off privileged Tencent root bootstrap once the host is configured.
+test ! -e .github/workflows/tencent-node-baseline-once.yml || {
+  echo 'OBSOLETE_TENCENT_ROOT_BOOTSTRAP_WORKFLOW_PRESENT' >&2; exit 1;
+}
+
 # Caddy site address is a hostname matcher, not a listener binding.
 # Explicit "bind" is mandatory or the health endpoint listens on *:8090.
 grep -Fq '    bind 127.0.0.1' labs/tencent-node/bootstrap.sh || {
