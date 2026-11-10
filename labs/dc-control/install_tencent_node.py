@@ -93,13 +93,30 @@ def main() -> None:
     installed = run("/usr/bin/node", "-p",
         'require("/opt/mira-dc-remote/node_modules/@wonderwhy-er/desktop-commander/package.json").version')
     ensure(installed == "0.3.1", "PINNED_AGENT_VERSION_MISMATCH")
+    # The operator may have a restrictive umask (077). npm then creates
+    # root-only dependency directories, so a non-root DC runner cannot read
+    # its fixed entrypoint despite a successful package installation.
+    # Give only the dedicated miraops group read/traverse (never write).
     for parent, dirs, files in os.walk(DEST):
-        os.chown(parent, 0, 0)
+        parent_path = Path(parent)
+        os.chown(parent_path, 0, account.pw_gid)
+        os.chmod(parent_path, (parent_path.stat().st_mode & ~0o022) | 0o050)
         for name in dirs + files:
-            item = Path(parent) / name
-            if not item.is_symlink():
-                os.chown(item, 0, 0)
-                os.chmod(item, item.stat().st_mode & ~0o022)
+            item = parent_path / name
+            if item.is_symlink():
+                continue
+            mode = item.stat().st_mode & ~0o022
+            os.chown(item, 0, account.pw_gid)
+            if item.is_dir():
+                mode |= 0o050
+            else:
+                mode |= 0o040
+                if mode & stat.S_IXUSR:
+                    mode |= 0o010
+            os.chmod(item, mode)
+    ensure(os.access(DEST / "node_modules" / "@wonderwhy-er" /
+                     "desktop-commander" / "dist" / "index.js", os.R_OK),
+           "PINNED_AGENT_ENTRY_MISSING")
 
     run("loginctl", "enable-linger", USER)
     run("systemctl", "start", f"user@{account.pw_uid}.service")
