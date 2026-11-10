@@ -1,0 +1,58 @@
+name: Tencent Mira Cloud node base (temporary)
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        required: true
+        default: inspect
+        options: [inspect, install]
+permissions:
+  contents: read
+concurrency:
+  group: mira-tencent-node-base-once
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    if: github.ref == 'refs/heads/prod'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify bootstrap source syntax
+        run: |
+          set -euo pipefail
+          bash -n labs/tencent-node/bootstrap.sh
+      - name: Execute once on verified Tencent root host
+        shell: bash
+        env:
+          TX_DEPLOY_HOST: ${{ secrets.TX_DEPLOY_HOST }}
+          TX_DEPLOY_USER: ${{ secrets.TX_DEPLOY_USER }}
+          SSHPASS: ${{ secrets.TX_DEPLOY_PASSWORD }}
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -euo pipefail
+          test -n "$TX_DEPLOY_HOST" && test "$TX_DEPLOY_USER" = root && test -n "$SSHPASS"
+          case "$OPERATION" in inspect|install) ;; *) exit 2 ;; esac
+          command -v sshpass >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq sshpass >/dev/null)
+          scan="$(mktemp)"
+          known="$(mktemp)"
+          trap 'rm -f "$scan" "$known"' EXIT
+          ssh-keyscan -T 8 -t ed25519 "$TX_DEPLOY_HOST" 2>/dev/null > "$scan"
+          test "$(wc -l < "$scan")" -eq 1
+          fingerprint="$(ssh-keygen -E sha256 -lf "$scan" | awk '{print $2}')"
+          test "$fingerprint" = 'SHA256:dts8drN74WDQjcE4OsKJ5zozv1oTQ7aLOSeeXLI16HE' || {
+            echo "PINNED_TENCENT_HOST_IDENTITY_MISMATCH"
+            exit 1
+          }
+          install -m 600 "$scan" "$known"
+          echo "TX_HOST_ED25519_PIN_VERIFIED=YES"
+          opts=(-F /dev/null -o HostKeyAlgorithms=ssh-ed25519
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known"
+            -o GlobalKnownHostsFile=/dev/null
+            -o PreferredAuthentications=password -o PubkeyAuthentication=no
+            -o NumberOfPasswordPrompts=1 -o ConnectTimeout=10 -o LogLevel=ERROR)
+          sshpass -e scp "${opts[@]}" -q labs/tencent-node/bootstrap.sh "$TX_DEPLOY_USER@$TX_DEPLOY_HOST:/root/mira-cloud-bootstrap.sh"
+          sshpass -e ssh "${opts[@]}" -T "$TX_DEPLOY_USER@$TX_DEPLOY_HOST" \
+            "chmod 700 /root/mira-cloud-bootstrap.sh && /bin/bash /root/mira-cloud-bootstrap.sh '$OPERATION'"
