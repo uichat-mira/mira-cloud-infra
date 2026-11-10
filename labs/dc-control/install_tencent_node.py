@@ -59,7 +59,15 @@ def main() -> None:
     ensure(int(run("/usr/bin/node", "-p", "process.versions.node.split('.')[0]")) >= 22, "NODE_22_REQUIRED")
     ensure(shutil.which("npm") is not None, "NPM_REQUIRED")
 
-    DEST.mkdir(mode=0o755, parents=True, exist_ok=True)
+    if DEST.exists() or DEST.is_symlink():
+        item = DEST.lstat()
+        ensure(stat.S_ISDIR(item.st_mode) and item.st_uid == 0 and not item.st_mode & 0o022,
+               "INSECURE_EXISTING_AGENT_INSTALL_DIR")
+    else:
+        DEST.mkdir(mode=0o755, parents=True)
+    os.chown(DEST, 0, 0)
+    os.chmod(DEST, 0o755)
+    ensure(not (DEST / "remote_agent.py").is_symlink(), "UNSAFE_AGENT_ENTRY_SYMLINK")
     shutil.copyfile(src, DEST / "remote_agent.py")
     os.chown(DEST / "remote_agent.py", 0, 0)
     os.chmod(DEST / "remote_agent.py", 0o644)
