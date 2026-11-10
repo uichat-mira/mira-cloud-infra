@@ -81,8 +81,9 @@ new starts. DC process active does not prove the remote cloud session is online.
 ### Provisioning gates (reviewed manual root path only)
 
 Do **not** run these scripts from an unchecked local download or a feature
-branch directly on production. Stage the reviewed release candidate at
-`/tmp/mira-dc-control-release/labs/dc-control` and verify its commit SHA.
+branch directly on production. Stage the reviewed release candidate under a
+root-owned directory without writable ancestors (not under `/tmp`), at
+`/root/mira-dc-control-release/labs/dc-control` and verify its commit SHA.
 Do not automate `prod` promotion solely from a green CI check.
 
 1. On **Tencent root console**, confirm `miraops` already owns a DC pairing
