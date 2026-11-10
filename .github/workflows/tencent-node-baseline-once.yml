@@ -6,7 +6,7 @@ on:
         type: choice
         required: true
         default: inspect
-        options: [inspect, install]
+        options: [inspect, install, repair]
 permissions:
   contents: read
 concurrency:
@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$TX_DEPLOY_HOST" && test "$TX_DEPLOY_USER" = root && test -n "$SSHPASS"
-          case "$OPERATION" in inspect|install) ;; *) exit 2 ;; esac
+          case "$OPERATION" in inspect|install|repair) ;; *) exit 2 ;; esac
           command -v sshpass >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq sshpass >/dev/null)
           scan="$(mktemp)"
           known="$(mktemp)"
