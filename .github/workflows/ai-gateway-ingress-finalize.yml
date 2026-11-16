@@ -1,0 +1,84 @@
+name: Persist canonical AI gateway ingress
+
+# One-shot, fail-closed production repair. No New API redeployment or DB changes.
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/ai-gateway-ingress-finalize.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mira-gateway-ingress-persistence
+  cancel-in-progress: false
+
+jobs:
+  persist:
+    name: Persist canonical gateway through authorized root SSH
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 8
+    steps:
+      - name: Guarded Caddy config promotion, reload and smoke
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 5m
+          script: |
+            set -eu
+            test "$(id -u)" -eq 0
+            cfg=/etc/caddy/Caddyfile
+            src=/var/tmp/mira-caddyfile-canonical-only
+            original=07accac3147f20234a78cecea2fb777353d35b9f99af5ce0dce43a256b9c3846
+            target=855ea68642f79cd98972e373f118106efad8e0fc0ae923949b7e067d5d6b07af
+            hash() { sha256sum "$1" | awk '{print $1}'; }
+            test -f "$cfg"
+            systemctl is-active --quiet caddy
+            current="$(hash "$cfg")"
+            if [ "$current" != "$target" ]; then
+              test "$current" = "$original" || { echo 'CADDY_CONFIG_DRIFT_ABORT'; exit 1; }
+              test -f "$src"
+              stage="$(mktemp /etc/caddy/.Caddyfile.ai-gateway.XXXXXXXX)"
+              cp -- "$src" "$stage"
+              test "$(hash "$stage")" = "$target" || { rm -f "$stage"; echo 'STAGED_HASH_MISMATCH'; exit 1; }
+              chown --reference="$cfg" "$stage"
+              chmod --reference="$cfg" "$stage"
+              caddy validate --config "$stage" --adapter caddyfile >/dev/null
+              backup="$(mktemp /opt/mira-cloud-infra/backups/Caddyfile.before-gateway-lock.XXXXXXXX)"
+              cp -p -- "$cfg" "$backup"
+              mv -f -- "$stage" "$cfg"
+              if ! systemctl reload caddy; then
+                cp -p -- "$backup" "$cfg"
+                systemctl reload caddy || true
+                echo 'RELOAD_FAILED_RESTORED_BACKUP'
+                exit 1
+              fi
+              echo "ROOT_BACKUP=$(basename "$backup")"
+            fi
+            test "$(hash "$cfg")" = "$target"
+            caddy validate --config "$cfg" --adapter caddyfile >/dev/null
+            grep -Fq 'mira-ai.tomzlab.cn {' "$cfg"
+            grep -Fxq 'import /etc/caddy/mira-cloud-auth.caddy' "$cfg"
+            grep -Fxq 'import /etc/caddy/tomzlab-web.caddy' "$cfg"
+            ! grep -Fq 'mira-api.tomz.io' "$cfg"
+            ! grep -Fq 'api.6260381.xyz' "$cfg"
+            ! grep -Fq ':3000 {' "$cfg"
+            if ss -lntH | awk '{print $4}' | grep -E ':3000$' | grep -v '^127.0.0.1:3000$' >/dev/null; then
+              echo 'PUBLIC_3000_STILL_LISTENING'
+              exit 1
+            fi
+            curl -fsS --max-time 5 http://127.0.0.1:3000/api/status >/dev/null
+            local_ip="$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}')"
+            test -n "$local_ip"
+            status="$(curl -ksS -m 8 --resolve "mira-ai.tomzlab.cn:443:$local_ip" -o /dev/null -w '%{http_code}' https://mira-ai.tomzlab.cn/api/status)"
+            test "$status" = 200
+            systemctl is-active --quiet caddy
+            echo 'CANONICAL_ONLY_CADDY_PERSISTED=YES'
+            echo 'LEGACY_DOMAINS_REMOVED=YES'
+            echo 'PUBLIC_IP_PORT_3000_BLOCKED=YES'
