@@ -1,16 +1,12 @@
-name: Publish tomzlab.cn static site
+name: Publish tomzlab.cn Folio static site
 
+# Manual only. A pipeline update must not redeploy a stale site commit.
 on:
-  push:
-    branches: [prod]
-    paths:
-      - .github/workflows/tomzlab-release.yml
-      - scripts/deploy-tomzlab-site.sh
   workflow_dispatch:
     inputs:
       site_sha:
-        description: 'Exact 40-character tomzlab-web prod commit; default is the reviewed first release'
-        required: false
+        description: Exact reviewed tomzlab-web prod commit
+        required: true
         type: string
 
 permissions:
@@ -22,20 +18,22 @@ concurrency:
 
 jobs:
   publish:
-    name: Verify, publish, and smoke tomzlab.cn
+    name: Build verified Folio site and atomically publish
     if: github.ref == 'refs/heads/prod'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     environment: production
     env:
-      SITE_SHA: ${{ inputs.site_sha || '6a34c9fc69f8456bb01a416fc538a88604ef8745' }}
+      SITE_SHA: ${{ inputs.site_sha }}
+      FOLIO_SHA: 7d06408aa25bde1b00409366cf302883af67592f
+
     steps:
-      - name: Fetch authorized deployment script
+      - name: Checkout production release rules
         uses: actions/checkout@v4
         with:
           path: infra
 
-      - name: Fetch exact website commit
+      - name: Checkout exact website
         uses: actions/checkout@v4
         with:
           repository: uichat-mira/tomzlab-web
@@ -43,28 +41,77 @@ jobs:
           fetch-depth: 0
           path: web
 
-      - name: Verify prod ancestry, public-only files, and site contracts
+      - name: Checkout exact Folio package source
+        uses: actions/checkout@v4
+        with:
+          repository: uichat-mira/folio
+          ref: ${{ env.FOLIO_SHA }}
+          fetch-depth: 0
+          path: folio
+
+      - name: Verify both source commits belong to reviewed prod branches
         shell: bash
         run: |
           set -euo pipefail
           [[ "$SITE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$FOLIO_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git -C web rev-parse HEAD)" = "$SITE_SHA"
           git -C web fetch --quiet origin prod
           git -C web merge-base --is-ancestor "$SITE_SHA" FETCH_HEAD
+          test "$(git -C folio rev-parse HEAD)" = "$FOLIO_SHA"
+          git -C folio fetch --quiet origin prod
+          git -C folio merge-base --is-ancestor "$FOLIO_SHA" FETCH_HEAD
           bash -n infra/scripts/deploy-tomzlab-site.sh
-          python3 web/scripts/check_site.py
-          test -z "$(find web/assets -type l -print -quit)"
-          for file in index.html notes.html weekly.html projects.html about.html 404.html robots.txt sitemap.xml assets/css/site.css assets/js/nav.js assets/js/feed-sync.js assets/icons/logo.svg assets/og.png; do
-            test -f "web/$file"
+          echo "TOMZLAB_SOURCES_VERIFIED=$SITE_SHA"
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Build the exact approved Folio package
+        shell: bash
+        working-directory: folio
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build -w @uichat-mira/folio
+          npm pack --ignore-scripts --workspace @uichat-mira/folio --pack-destination ../
+          test -f ../uichat-mira-folio-0.1.1.tgz
+
+      - name: Build and verify the complete public website
+        shell: bash
+        working-directory: web
+        env:
+          TOMZLAB_FEED_MODE: required
+          TOMZLAB_SITE_BASE: /
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm install --ignore-scripts --no-save --package-lock=false ../uichat-mira-folio-0.1.1.tgz
+          npm run test:contract
+          npm run typecheck
+          npm run build
+          python3 scripts/check_site.py
+          node scripts/check-built-site.mjs
+          test -z "$(find _site -type l -print -quit)"
+          test ! -e _site/.env
+          for file in index.html notes/index.html engineering/index.html weekly/index.html projects/index.html about/index.html journal/index.html 404.html robots.txt sitemap.xml assets/icons/logo.svg; do
+            test -f "_site/$file"
           done
-          tar -czf "tomzlab-site-${SITE_SHA}.tar.gz" -C web \
-            index.html notes.html weekly.html projects.html about.html 404.html \
-            robots.txt sitemap.xml assets
+          test -n "$(find _site/assets -type f -name 'index-*.js' -print -quit)"
+          test -n "$(find _site/assets -type f -name 'index-*.css' -print -quit)"
+          echo "TOMZLAB_FULL_SITE_VERIFIED=$SITE_SHA"
+
+      - name: Archive only verified generated static output
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "tomzlab-site-${SITE_SHA}.tar.gz" -C web/_site .
           tar -tzf "tomzlab-site-${SITE_SHA}.tar.gz" >/dev/null
           cp infra/scripts/deploy-tomzlab-site.sh ./deploy-tomzlab-site.sh
-          echo "SITE_CANDIDATE_VERIFIED=$SITE_SHA"
 
-      - name: Confirm existing dedicated Caddy origin (read-only)
+      - name: Verify existing dedicated Caddy origin without writes
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -81,9 +128,9 @@ jobs:
             test -f /srv/www/tomzlab.cn/current/index.html
             grep -RFlq --include='Caddyfile' --include='*.caddy' 'tomzlab.cn' /etc/caddy
             grep -RFlq --include='Caddyfile' --include='*.caddy' '/srv/www/tomzlab.cn/current' /etc/caddy
-            echo 'TOMZLAB_PREDEPLOY_ORIGIN=PASS'
+            echo TOMZLAB_PREDEPLOY_ORIGIN=PASS
 
-      - name: Upload only public static release and deployment script
+      - name: Transfer only the site archive and release script
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -94,7 +141,7 @@ jobs:
           target: '/tmp'
           overwrite: true
 
-      - name: Atomic symlink switch, rollback guard, production HTTP smoke
+      - name: Atomic switch and verified real HTTPS smoke with rollback
         uses: appleboy/ssh-action@v1
         env:
           SITE_SHA: ${{ env.SITE_SHA }}
@@ -104,17 +151,16 @@ jobs:
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT || '22' }}
           envs: SITE_SHA
-          command_timeout: 5m
+          command_timeout: 6m
           script: |
             set -eu
             test -f /tmp/deploy-tomzlab-site.sh
             bash /tmp/deploy-tomzlab-site.sh "$SITE_SHA"
             rm -f /tmp/deploy-tomzlab-site.sh
 
-      - name: Optional off-host HTTP observation (not a substitute for origin T5)
+      - name: Independent HTTPS observation
         shell: bash
-        continue-on-error: true
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location --connect-timeout 5 --max-time 20 "https://tomzlab.cn/weekly.html" | grep -F '见π 周刊' >/dev/null
-          echo 'TOMZLAB_EXTERNAL_HTTP_OBSERVATION=PASS'
+          curl --proto =https --proto-redir =https -fsSL --connect-timeout 5 --max-time 20 "https://tomzlab.cn/engineering/?released=${SITE_SHA}" | grep -F '工程与产品' >/dev/null
+          echo TOMZLAB_EXTERNAL_HTTP=PASS
