@@ -74,9 +74,9 @@ jobs:
         working-directory: folio
         run: |
           set -euo pipefail
-          npm ci --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run build -w @uichat-mira/folio
-          npm pack --workspace @uichat-mira/folio --pack-destination ../
+          npm pack --ignore-scripts --workspace @uichat-mira/folio --pack-destination ../
           test -f ../uichat-mira-folio-0.1.1.tgz
 
       - name: Build and verify the complete public website
@@ -87,8 +87,8 @@ jobs:
           TOMZLAB_SITE_BASE: /
         run: |
           set -euo pipefail
-          npm ci --no-audit --no-fund
-          npm install --no-save --package-lock=false ../uichat-mira-folio-0.1.1.tgz
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm install --ignore-scripts --no-save --package-lock=false ../uichat-mira-folio-0.1.1.tgz
           npm run test:contract
           npm run typecheck
           npm run build
@@ -162,5 +162,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL --connect-timeout 5 --max-time 20 "https://tomzlab.cn/engineering/?released=${SITE_SHA}" | grep -F '工程与产品' >/dev/null
+          curl --proto =https --proto-redir =https -fsSL --connect-timeout 5 --max-time 20 "https://tomzlab.cn/engineering/?released=${SITE_SHA}" | grep -F '工程与产品' >/dev/null
           echo TOMZLAB_EXTERNAL_HTTP=PASS
