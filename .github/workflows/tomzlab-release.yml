@@ -8,6 +8,11 @@ on:
         description: Exact reviewed tomzlab-web prod commit
         required: true
         type: string
+      one_time_folio_exception:
+        description: Allow only the expressly approved 2026-11-21 site/Folio SHA pair
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -26,6 +31,7 @@ jobs:
     env:
       SITE_SHA: ${{ inputs.site_sha }}
       FOLIO_SHA: 7d06408aa25bde1b00409366cf302883af67592f
+      FOLIO_ONE_TIME_EXCEPTION: ${{ inputs.one_time_folio_exception }}
 
     steps:
       - name: Checkout production release rules
@@ -60,7 +66,18 @@ jobs:
           git -C web merge-base --is-ancestor "$SITE_SHA" FETCH_HEAD
           test "$(git -C folio rev-parse HEAD)" = "$FOLIO_SHA"
           git -C folio fetch --quiet origin prod
-          git -C folio merge-base --is-ancestor "$FOLIO_SHA" FETCH_HEAD
+          if git -C folio merge-base --is-ancestor "$FOLIO_SHA" FETCH_HEAD; then
+            echo 'FOLIO_PROD_ANCESTRY=PASS'
+          elif [[ "$FOLIO_ONE_TIME_EXCEPTION" == 'true'
+                  && "$SITE_SHA" == '0e76fd587fd22ab5932e1167c3d0c8fdcff1f8ee'
+                  && "$FOLIO_SHA" == '7d06408aa25bde1b00409366cf302883af67592f' ]]; then
+            # Explicit maintainer approval, 2026-11-21. No other SHA pair is exempt.
+            # All build, contract, artifact, Caddy, rollback and T5 checks remain mandatory.
+            echo 'FOLIO_ONE_TIME_PIN_EXCEPTION=APPROVED_EXACT_PAIR'
+          else
+            echo 'FOLIO_RELEASE_ADMISSION_DENIED' >&2
+            exit 1
+          fi
           bash -n infra/scripts/deploy-tomzlab-site.sh
           echo "TOMZLAB_SOURCES_VERIFIED=$SITE_SHA"
 
