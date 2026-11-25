@@ -1,7 +1,7 @@
 name: Retire Moyu legacy Caddy origin (ESA cutover)
 
-# Scoped one-time production hotfix. No workflow_dispatch: prod promotion alone
-# triggers the operation. A retry is safe because the server script is idempotent.
+# Scoped production hotfix. This revision updates the fail-closed guards to the
+# current Caddy topology; the prod push triggers one idempotent retirement run.
 on:
   push:
     branches: [prod]

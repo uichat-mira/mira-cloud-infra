@@ -13,8 +13,9 @@ retired_line='# retired for Moyu ESA cutover: import /etc/caddy/moyu-static-site
 test -f "$cfg"
 test -f "$site_vhost"
 grep -Fq '6260381.xyz {' "$site_vhost"
-# These unrelated production ingress routes must remain in the source Caddyfile.
-grep -Fxq 'mira-api.tomz.io, api.6260381.xyz {' "$cfg"
+# Current unrelated production imports must survive this scoped edit.
+# The historical api.6260381.xyz / mira-api.tomz.io route was already retired
+# independently and is no longer a valid precondition for disabling Moyu.
 grep -Fxq 'import /etc/caddy/mira-cloud-auth.caddy' "$cfg"
 grep -Fxq 'import /etc/caddy/tomzlab-web.caddy' "$cfg"
 systemctl is-active --quiet caddy
@@ -43,11 +44,8 @@ def walk(value):
 
 walk(config)
 retired = {"6260381.xyz", "www.6260381.xyz"}
-preserved = {"api.6260381.xyz", "mira-api.tomz.io", "tomzlab.cn"}
 if retired & hosts:
     raise SystemExit("Retired Moyu host remains in adapted Caddy configuration")
-if not preserved <= hosts:
-    raise SystemExit("Unrelated ingress hosts missing: " + ", ".join(sorted(preserved - hosts)))
 PY
 }
 
@@ -112,6 +110,8 @@ mv -f -- "$stage" "$cfg"
 systemctl reload caddy
 systemctl is-active --quiet caddy
 caddy validate --config "$cfg" --adapter caddyfile >/dev/null
+grep -Fxq 'import /etc/caddy/mira-cloud-auth.caddy' "$cfg"
+grep -Fxq 'import /etc/caddy/tomzlab-web.caddy' "$cfg"
 verify_routes "$cfg"
 committed=yes
 
