@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: uichat-mira/folio
-          ref: a0d7c88c23b1a9f39b56d016626c2257659b57ae
+          ref: eabb0c546a642ad3cb30744a6c69baecec357233
           path: folio
           persist-credentials: false
 
@@ -63,7 +63,7 @@ jobs:
           test "$(git -C web rev-parse HEAD)" = "$SITE_SHA"
           git -C web fetch --quiet origin prod
           git -C web merge-base --is-ancestor "$SITE_SHA" FETCH_HEAD
-          test "$(git -C folio rev-parse HEAD)" = a0d7c88c23b1a9f39b56d016626c2257659b57ae
+          test "$(git -C folio rev-parse HEAD)" = eabb0c546a642ad3cb30744a6c69baecec357233
           bash -n infra/scripts/deploy-moyu-site.sh
           test -f web/package-lock.json
           echo "MOYU_PROD_ANCESTRY=PASS"
